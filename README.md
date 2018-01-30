@@ -31,3 +31,25 @@ which can be used by your own scripts.
 
 An example Python 3 script named `search.py` is also included, which enables you to search the list of ZIP files on NVG and
 demonstrates how to use the `nvg.csv` module.
+
+## Usage
+
+To use the module in your own Python scripts, copy the `nvg` directory and its contents to your working directory and include the following line in your script:
+
+```python
+from nvg.csv import read_nvg_csv_file
+```
+
+To read the data from the CSV file into a dictionary named `nvg_file_data`, include the following lines (replacing `nvg_csv_filepath` with the location of the `00_table.csv` file on your own computer):
+
+```python
+nvg_csv_filepath = r'c:\cpc\nvg\00_table.csv'
+nvg_file_data = read_nvg_csv_file(nvg_csv_filepath)
+```
+
+The dictionary stores the list of ZIP files on NVG as keys, and the data for each file is also stored as a dictionary, with the keys being the names of each field in the `file_id.diz` file. The example below displays the data for the game *Roland on the Ropes*, with the fields being displayed in no particular order:
+
+```python
+for field, value in nvg_file_data['games/arcade/rolanrop.zip'].items():
+	print(field + ': ' + str(value))
+```
