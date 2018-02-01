@@ -167,7 +167,7 @@ fields that were matched and a list of the strings that were matched.
 # ------------
 
 # Initialise variables, dictionaries and lists
-nvg_csv_filename = r'd:\cpc\00_table.csv'
+nvg_csv_filename = r'00_table.csv'
 file_data = read_nvg_csv_file(nvg_csv_filename)
 
 # Iterate the dictionary of NVG file data and add ASCII equivalents of fields
