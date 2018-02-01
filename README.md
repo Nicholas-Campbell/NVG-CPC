@@ -2,6 +2,8 @@
 A set of scripts for reading and using data about files on the NVG Amstrad CPC software archive, located at
 ftp://ftp.nvg.ntnu.no/pub/cpc/ .
 
+More information about the Amstrad CPC range of computers is available at [Wikipedia](https://en.wikipedia.org/wiki/Amstrad_CPC).
+
 ## Introduction
 
 The NVG Amstrad CPC software archive (hereafter abbreviated to **NVG**) is one of the oldest archives of Amstrad CPC software
@@ -43,7 +45,7 @@ from nvg.csv import read_nvg_csv_file
 To read the data from the CSV file into a dictionary named `nvg_file_data`, include the following lines (replacing `nvg_csv_filepath` with the location of the `00_table.csv` file on your own computer):
 
 ```python
-nvg_csv_filepath = r'c:\cpc\nvg\00_table.csv'
+nvg_csv_filepath = r'00_table.csv'
 nvg_file_data = read_nvg_csv_file(nvg_csv_filepath)
 ```
 
@@ -52,4 +54,13 @@ The dictionary stores the list of ZIP files on NVG as keys, and the data for eac
 ```python
 for field, value in nvg_file_data['games/arcade/rolanrop.zip'].items():
 	print(field + ': ' + str(value))
+```
+
+The module contains a list named `csv_field_names`, which contains the names of the fields in the same order as the columns in the `00_table.csv` file. You can use this list to display the fields in order:
+
+```python
+filepath = 'games/arcade/rolanrop.zip'
+for field in nvg.csv.csv_field_names:
+	if field in nvg_file_data[filepath].keys():
+		print(field + ': ' + str(nvg_file_data[filepath][field]))
 ```
