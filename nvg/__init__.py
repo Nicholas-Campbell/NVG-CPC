@@ -1,1 +1,1 @@
-__all__ = ['csv']
+__all__ = ['csv', 'fileid']
