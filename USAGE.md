@@ -58,6 +58,8 @@ nvg.fileid.print_file_id_diz('rolanrop.zip')
 
 A Python 3 script named `sql.py` is included, which reads a locally stored copy of the `00_table.csv` file on NVG and creates a database containing the information in this file. Much of this information is converted to and stored as ID numbers in separate tables, to enable more efficient storage and faster searching.
 
+In order to use `sql.py`, the [PyMySQL](https://pymysql.readthedocs.io/en/latest/) package must be installed. It also uses the `nvg.csv` module described in the **Python** section above.
+
 The file `create_stored_routines.sql` contains various stored functions and procedures that can be used to retrieve information from the database and process it in your own applications.
 
 #### Stored functions
