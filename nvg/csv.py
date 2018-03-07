@@ -5,8 +5,8 @@
 # This file can be downloaded from the archive at the URL below:
 # <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 #
-# by Nicholas Campbell 06/01/2018
-# Last update: 21/01/2018
+# Initial version by Nicholas Campbell 2018-01-06
+# Last update: 2018-01-21
 
 import csv	# Intended to import Python's built-in CSV module
 from os import path
