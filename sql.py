@@ -7,7 +7,7 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-03-05
+# Last update: 2018-03-07
 
 import argparse
 import csv
@@ -28,22 +28,12 @@ import warnings
 nvg_csv_filename = r'00_table.csv'
 author_aliases_csv_filename = r'author_aliases.csv'
 file_data = {}
-csv_field_name = ['Action','File Path','Size','TITLE',
-	'COMPANY','YEAR','LANGUAGE','TYPE','SUBTYPE','TITLE SCREEN','CHEAT MODE',
-	'PROTECTED','PROBLEMS','Upload Date','Uploader','COMMENTS',
-
-	'ALSO KNOWN AS','ORIGINAL TITLE','PUBLISHER','RE-RELEASED BY',
-	'PUBLICATION','PUBLISHER CODE','BARCODE','DL CODE','CRACKER','DEVELOPER',
-	'AUTHOR','DESIGNER','ARTIST','MUSICIAN','MEMORY REQUIRED','PROTECTION',
-	'RUN COMMAND']
-max_field_length = [0] * len(csv_field_name)
 
 author_field_list = ['PUBLISHER','RE-RELEASED BY','CRACKER','DEVELOPER',
 	'AUTHOR','DESIGNER','ARTIST','MUSICIAN']
 author_set_def = ','.join([repr(type) for type in author_field_list])
 
-# Database connections and filenames
-db_name = 'cpc'
+# Database filenames
 db_trigger_source_file = 'create_triggers.sql'
 db_stored_routine_source_file = 'create_stored_routines.sql'
 db_view_source_file = 'create_views.sql'
@@ -92,7 +82,7 @@ def create_id_dict(dict, field_list, delimiter=','):
 
 def print_help():
 	indent = ' '*22
-	print('Usage: {0} [OPTIONS]\n'.format(sys.argv[0]))
+	print('Usage: {0} [OPTIONS] [database]\n'.format(sys.argv[0]))
 	print('The following options can be used:')
 	print('  -?, --help          Display this help message and exit.')
 	print('  -h, --host=name     Connect to host.')
@@ -115,25 +105,35 @@ def print_help():
 # The allowed options are intentionally similar to those used by MySQL
 
 db_hostname = 'localhost'
+db_name = 'cpc'
 db_username = getpass.getuser()
 db_password = None
 
 try:
 	optlist, args = getopt.getopt(sys.argv[1:], '?h:u:p:',
 		['help', 'host=', 'user=', 'password='])
-	for (option, value) in optlist:
-		# Print the help message and quit
-		if option in ['-?', '--help']:
-			print_help()
-			quit()
+	# If more than one database name is supplied, then print the help message
+	# and quit
+	if len(args) > 1:
+		print_help()
+		quit()
+	else:
+		for (option, value) in optlist:
+			# Print the help message and quit
+			if option in ['-?', '--help']:
+				print_help()
+				quit()
 
-		# Database connection options
-		elif option in ['-h', '--host']:
-			db_hostname = value
-		elif option in ['-u', '--user']:
-			db_username = value
-		elif option in ['-p', '--password']:
-			db_password = value
+			# Database connection options
+			elif option in ['-h', '--host']:
+				db_hostname = value
+			elif option in ['-u', '--user']:
+				db_username = value
+			elif option in ['-p', '--password']:
+				db_password = value
+
+		if args:
+			db_name = args[0]
 except getopt.GetoptError as argument_parse_error:
 	print('Error while parsing options: ' + argument_parse_error.msg)
 	quit()
@@ -238,8 +238,8 @@ for filepath in sorted(file_data):
 	# represent 'not applicable'; delete these values from the file data
 	for column in range(7, 13):
 		try:
-			if file_data[filepath][csv_field_name[column]] == '-':
-				del file_data[filepath][csv_field_name[column]]
+			if file_data[filepath][nvg.csv.csv_field_names[column]] == '-':
+				del file_data[filepath][nvg.csv.csv_field_names[column]]
 		except KeyError:
 			pass
 	
@@ -384,6 +384,7 @@ try:
 	cursor.execute('DROP DATABASE IF EXISTS ' + db_name)
 	cursor.execute('CREATE DATABASE ' + db_name)
 	cursor.execute('USE ' + db_name)
+	print('Using database {0}.'.format(db_name))
 	warnings.simplefilter('default')
 except sql.OperationalError as db_error:
 	print(('Unable to set up database {0} on host {1}. Please check with your '
