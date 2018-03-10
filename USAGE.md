@@ -246,15 +246,95 @@ Select all the titles that are associated with the specified author ID number.
 
 ##### `search_authors(VARCHAR(255) search_term)`
 
-Select all the author ID numbers, names and types that match the specified search term.
+Select all the author ID numbers, names and types that match the specified search term, using standard SQL pattern matching syntax (i.e. `_` matches a single character, and `%` matches zero or more characters).
+
+For example, to search for all authors whose names contain the term `Oliver`, use the following query:
+
+```sql
+CALL search_authors('%oliver%');
+```
+```
++-----------+---------------------+--------------------+-------------+
+| author_id | author_name         | alias_of_author_id | author_type |
++-----------+---------------------+--------------------+-------------+
+|       132 | Andrew Oliver       |               NULL | ARTIST      |
+|       132 | Andrew Oliver       |               NULL | DESIGNER    |
+|       132 | Andrew Oliver       |               NULL | AUTHOR      |
+|       326 | Carlos Oliver       |               NULL | AUTHOR      |
+|       468 | César Ivorra Oliver |               NULL | AUTHOR      |
+|       926 | Ian Oliver          |               NULL | AUTHOR      |
+|      1616 | Oliver Goodman      |               NULL | AUTHOR      |
+|      1617 | Oliver Mayer        |               NULL | MUSICIAN    |
+|      1749 | Philip Oliver       |               NULL | AUTHOR      |
+|      1749 | Philip Oliver       |               NULL | ARTIST      |
+|      1749 | Philip Oliver       |               NULL | DESIGNER    |
+|      2201 | The Oliver Twins    |               NULL | DEVELOPER   |
+|      2201 | The Oliver Twins    |               NULL | DESIGNER    |
++-----------+---------------------+--------------------+-------------+
+13 rows in set (0.01 sec)
+```
+
+Note that the same author ID and name may appear more than once in the set of results; there is one row for each author type. In the above example, both Andrew Oliver and Philip Oliver appear three times &ndash; once as an author, once as an artist, and once as a designer.
 
 ##### `search_filepaths(VARCHAR(260) search_term)`
 
 Select all the filepath ID numbers and filepaths that match the specified search term.
 
+For example, the following query selects all filepaths containing the term `ghost`:
+
+```sql
+CALL search_filepaths('%ghost%');
+```
+```
++-------------+---------------------------+
+| filepath_id | filepath                  |
++-------------+---------------------------+
+|        1723 | games/arcade/ghostb.zip   |
+|        1724 | games/arcade/ghostbu2.zip |
+|        1725 | games/arcade/ghostgob.zip |
+|        1726 | games/arcade/ghosthun.zip |
+|        1727 | games/arcade/ghostsca.zip |
+|        1728 | games/arcade/ghoststr.zip |
+|        4618 | utils/cpc/ghostwri.zip    |
++-------------+---------------------------+
+7 rows in set (0.01 sec)
+```
+
 ##### `search_titles(VARCHAR(255) search_term)`
 
 Select all the filepath ID numbers and titles that match the specified search term, and also specify if a title is an alias.
+
+For example, the following query selects all filepaths where the title contains the term `ghost`:
+
+```sql
+CALL search_filepaths('%ghost%');
+```
+```
++-------------+-----------------------------------------------+----------+
+| filepath_id | title                                         | is_alias |
++-------------+-----------------------------------------------+----------+
+|         979 | SCAPEGHOST                                    |        0 |
+|        1354 | Bubble Ghost                                  |        0 |
+|        1723 | GHOSTBUSTERS                                  |        0 |
+|        1724 | Ghostbusters II                               |        0 |
+|        1725 | Ghosts'n Goblins                              |        0 |
+|        1725 | Ghosts 'n' Goblins                            |        1 |
+|        1726 | Ghost Hunters                                 |        0 |
+|        1727 | GHOSTS (CASCADE)                              |        0 |
+|        1728 | GHOSTS (THOMAS REISEPATT)                     |        0 |
+|        1729 | Ghouls 'n' Ghosts                             |        0 |
+|        1729 | Ghouls 'n Ghosts                              |        1 |
+|        1927 | Knight Ghost                                  |        0 |
+|        2151 | Olli and Lissa: The Ghost of Shilmoore Castle |        1 |
+|        2308 | Real Ghostbusters, The                        |        0 |
+|        4618 | GHOST-WRITER                                  |        0 |
++-------------+-----------------------------------------------+----------+
+15 rows in set (0.01 sec)
+```
+
+Note that the same filepath ID may appear more than once in the set of results. This procedure searches the title of each filepath (the `title` column in the `nvg` table, or the `TITLE` field in the `file_id.diz` file) and all the aliases by which it is also known (the `title` column in the `nvg_title_aliases` table, or the `ALSO KNOWN AS` field in the `file_id.diz` file).
+
+In the above example, *Ghosts'n Goblins* and *Ghouls 'n' Ghosts* both appear twice, because their aliases also contain the term `ghost`. Also note how *Olli and Lissa: The Ghost of Shilmoore Castle* is included in the results; it is an alias of the title *Olli and Lissa*, but as *Olli and Lissa* does not contain the term `ghost`, it is not included in the set of results.
 
 ##### `validate_nvg_data(VARCHAR(255) original_title, TINYINT UNSIGNED publication_type_id, VARCHAR(16) publisher_code, VARCHAR(13) barcode, VARCHAR(26) dl_code, SMALLINT UNSIGNED memory_required, VARCHAR(50) cheat_mode, VARCHAR(255) protection, VARCHAR(1000) run_command, VARCHAR(255) company, VARCHAR(50) protected)`
 
