@@ -293,7 +293,7 @@ DELIMITER //
 CREATE PROCEDURE search_authors(IN search_term_param VARCHAR(255))
 BEGIN
 	SELECT DISTINCT a.author_id, a.author_name, a.alias_of_author_id, fa.author_type FROM nvg_author_ids a
-	INNER JOIN nvg_file_authors fa
+	LEFT JOIN nvg_file_authors fa
 	USING (author_id)
 	WHERE a.author_name LIKE search_term_param
 	ORDER BY a.author_name, a.author_id;
