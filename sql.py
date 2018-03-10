@@ -7,7 +7,7 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-03-07
+# Last update: 2018-03-10
 
 import argparse
 import csv
@@ -81,10 +81,13 @@ def create_id_dict(dict, field_list, delimiter=','):
 # Display a help message
 
 def print_help():
+	"""Display the help message associated with this program.
+"""
 	indent = ' '*22
 	print('Usage: {0} [OPTIONS] [database]\n'.format(sys.argv[0]))
 	print('The following options can be used:')
 	print('  -?, --help          Display this help message and exit.')
+	print('  -D, --database=name Database to use.')
 	print('  -h, --host=name     Connect to host.')
 	print('  -p, --password=name Password to use when connecting to host. If '
 		+ 'no password\n'
@@ -94,6 +97,162 @@ def print_help():
 		+ 'no username\n'
 		+ indent + 'is specified then the current login username will be\n'
 		+ indent + 'used.')
+
+# Set up the database and create tables, triggers, procedures, functions and
+# views
+
+def setup_db():
+	try:
+		cursor = connection.cursor()
+		connection.begin()
+		table_name = 'nvg_type_ids'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(type_id TINYINT UNSIGNED AUTO_INCREMENT,\n'
+		'type_desc VARCHAR(255) NOT NULL,\n'
+		'PRIMARY KEY (type_id)'
+		')')
+		cursor.execute(query)
+
+		table_name = 'nvg_publication_type_ids'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(type_id TINYINT UNSIGNED AUTO_INCREMENT,\n'
+		'type_desc VARCHAR(255) NOT NULL,\n'
+		'PRIMARY KEY (type_id)'
+		')')
+		cursor.execute(query)
+
+		table_name = 'nvg_language_codes'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(language_code VARCHAR(5) NOT NULL,\n'
+		'language_desc VARCHAR(30) NOT NULL,\n'
+		'PRIMARY KEY (language_code)'
+		')')
+		cursor.execute(query)
+
+		table_name = 'nvg'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(filepath_id INT UNSIGNED AUTO_INCREMENT,\n'
+		'filepath VARCHAR(260) CHARACTER SET ascii NOT NULL,\n'
+		'file_size INT UNSIGNED NOT NULL,\n'
+		'title VARCHAR(255),\n'
+		'company VARCHAR(255),\n'
+		'year DATE,\n'
+		'language SET(' + language_set_def + '),\n'
+		'type_id TINYINT UNSIGNED,\n'
+		'subtype VARCHAR(255),\n'
+		'title_screen VARCHAR(50),\n'
+		'cheat_mode VARCHAR(50),\n'
+		'protected VARCHAR(50),\n'
+		'problems VARCHAR(255),\n'
+		'upload_date DATE,\n'
+		'uploader VARCHAR(255),\n'
+		"comments VARCHAR(1000) DEFAULT '',\n"
+		'original_title VARCHAR(255),\n'
+		'publication_type_id TINYINT UNSIGNED,\n'
+		'publisher_code VARCHAR(16),\n'
+		'barcode VARCHAR(13),\n'
+		'dl_code VARCHAR(26),\n'
+		'memory_required SMALLINT UNSIGNED,\n'
+		'protection VARCHAR(255),\n'
+		'run_command VARCHAR(1000),\n'
+		'PRIMARY KEY (filepath_id),\n'
+		'UNIQUE INDEX (filepath),\n'
+		'CONSTRAINT FOREIGN KEY fk_type_id (type_id) REFERENCES nvg_type_ids (type_id),\n'
+		'CONSTRAINT FOREIGN KEY fk_publication_type_id (publication_type_id) REFERENCES nvg_publication_type_ids (type_id)\n'
+		')')
+		cursor.execute(query)
+
+		table_name = 'nvg_title_aliases'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(filepath_id INT UNSIGNED,\n'
+		'title VARCHAR(255),\n'
+		'PRIMARY KEY (filepath_id, title),\n'
+		'CONSTRAINT FOREIGN KEY fk_filepath_id (filepath_id) REFERENCES nvg (filepath_id)\n'
+		')')
+		cursor.execute(query)
+
+		table_name = 'nvg_author_ids'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(author_id SMALLINT UNSIGNED AUTO_INCREMENT,\n'
+		'author_name VARCHAR(255) NOT NULL,\n'
+		'alias_of_author_id SMALLINT UNSIGNED,\n'
+		'PRIMARY KEY (author_id),\n'
+		'CONSTRAINT FOREIGN KEY fk_alias_of_author (alias_of_author_id) REFERENCES nvg_author_ids (author_id)\n'
+		')')
+		cursor.execute(query)
+
+		table_name = 'nvg_file_authors'
+		print('Creating table ' + table_name + '...')
+		query = ('CREATE TABLE ' + table_name + '\n'
+		'(filepath_id INT UNSIGNED,\n'
+		'author_id SMALLINT UNSIGNED,\n'
+		'author_type ENUM (' + author_set_def + '),\n'
+		'author_index SMALLINT UNSIGNED,\n'
+		'PRIMARY KEY (filepath_id, author_id, author_type),\n'
+		'UNIQUE INDEX (filepath_id, author_type, author_index),\n'
+		'CONSTRAINT FOREIGN KEY fk_fa_filepath_id (filepath_id) REFERENCES nvg (filepath_id),\n'
+		'CONSTRAINT FOREIGN KEY fk_fa_author_id (author_id) REFERENCES nvg_author_ids (author_id)'
+		')')
+		cursor.execute(query)
+		connection.commit()
+	except sql.OperationalError as db_error:
+		print(('Unable to create table {0}. The following error was '
+			+ 'encountered:').format(table_name))
+		print('Error code: ' + str(db_error.args[0]))
+		print('Error message: ' + db_error.args[1])
+		connection.close()
+		quit()
+
+	# Set up the triggers, stored procedures, functions and views by running
+	# MySQL directly and processing the SQL files
+	db_command_base = ('mysql -h {0} -D {1} -u {2} --password={3}').format(
+		db_hostname, db_name, db_username, db_password)
+
+	# Triggers
+	print('Reading triggers from source file {0}...'.format(
+		db_trigger_source_file))
+	db_command = (db_command_base + ' < {0}').format(db_trigger_source_file)
+	if os.system(db_command) != 0:
+		print(('Unable to create triggers for database {0} on host {1}. '
+			+ 'Please check that the PATH environment variable is set '
+			+ 'correctly, or check with your database administrator that you '
+			+ 'have the appropriate privileges to create and alter '
+			+ 'triggers.').format(db_name, db_hostname))
+		connection.close()
+		quit()
+
+	# Stored procedures and functions
+	print(('Reading stored procedures and functions from source file '
+		+ '{0}...').format(db_stored_routine_source_file))
+	db_command = (db_command_base + ' < {0}').format(
+		db_stored_routine_source_file)
+	if os.system(db_command) != 0:
+		print(('Unable to create stored procedures and functions for database '
+			+ '{0} on host {1}. Please check that the PATH environment '
+			+ 'variable is set correctly, or check with your database '
+			+ 'administrator that you have the appropriate privileges to '
+			+ 'create and alter stored procedures and functions.').format(
+			db_name, db_hostname))
+		connection.close()
+		quit()
+
+	# Views
+	print(('Reading views from source file {0}...').format(db_view_source_file))
+	db_command = (db_command_base + ' < {0}').format(db_view_source_file)
+	if os.system(db_command) != 0:
+		print(('Unable to create views for database {0} '
+			+ 'on host {1}. Please check that the PATH environment variable '
+			+ 'is set correctly, or check with your database administrator '
+			+ 'that you have the appropriate privileges to create and alter '
+			+ 'views.').format(db_name, db_hostname))
+		connection.close()
+		quit()
 
 
 # ------------
@@ -108,10 +267,12 @@ db_hostname = 'localhost'
 db_name = 'cpc'
 db_username = getpass.getuser()
 db_password = None
+db_name_set_in_options = False	# Has the name of the database been set in the
+								# command-line options?
 
 try:
-	optlist, args = getopt.getopt(sys.argv[1:], '?h:u:p:',
-		['help', 'host=', 'user=', 'password='])
+	optlist, args = getopt.getopt(sys.argv[1:], '?D:h:u:p:',
+		['help', 'database=', 'host=', 'user=', 'password='])
 	# If more than one database name is supplied, then print the help message
 	# and quit
 	if len(args) > 1:
@@ -125,6 +286,9 @@ try:
 				quit()
 
 			# Database connection options
+			elif option in ['-D', '--database']:
+				db_name = value
+				db_name_set_in_options = True
 			elif option in ['-h', '--host']:
 				db_hostname = value
 			elif option in ['-u', '--user']:
@@ -132,8 +296,14 @@ try:
 			elif option in ['-p', '--password']:
 				db_password = value
 
+		# Check if more than one database has been specified (i.e. by using
+		# -D or --database, as well as specifying the name of the database as
+		# the last argument)
 		if args:
-			db_name = args[0]
+			if db_name_set_in_options and args[0] != db_name:
+				raise getopt.GetoptError('more than one database specified')
+			else:
+				db_name = args[0]
 except getopt.GetoptError as argument_parse_error:
 	print('Error while parsing options: ' + argument_parse_error.msg)
 	quit()
@@ -398,151 +568,8 @@ except sql.OperationalError as db_error:
 # Create tables for storing data from NVG
 # ---------------------------------------
 
-try:
-	table_name = 'nvg_type_ids'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(type_id TINYINT UNSIGNED AUTO_INCREMENT,\n'
-	'type_desc VARCHAR(255) NOT NULL,\n'
-	'PRIMARY KEY (type_id)'
-	')')
-	cursor.execute(query)
-
-	table_name = 'nvg_publication_type_ids'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(type_id TINYINT UNSIGNED AUTO_INCREMENT,\n'
-	'type_desc VARCHAR(255) NOT NULL,\n'
-	'PRIMARY KEY (type_id)'
-	')')
-	cursor.execute(query)
-
-	table_name = 'nvg_language_codes'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(language_code VARCHAR(5) NOT NULL,\n'
-	'language_desc VARCHAR(30) NOT NULL,\n'
-	'PRIMARY KEY (language_code)'
-	')')
-	cursor.execute(query)
-
-	table_name = 'nvg'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(filepath_id INT UNSIGNED AUTO_INCREMENT,\n'
-	'filepath VARCHAR(260) CHARACTER SET ascii NOT NULL,\n'
-	'file_size INT UNSIGNED NOT NULL,\n'
-	'title VARCHAR(255),\n'
-	'company VARCHAR(255),\n'
-	'year DATE,\n'
-	'language SET(' + language_set_def + '),\n'
-	'type_id TINYINT UNSIGNED,\n'
-	'subtype VARCHAR(255),\n'
-	'title_screen VARCHAR(50),\n'
-	'cheat_mode VARCHAR(50),\n'
-	'protected VARCHAR(50),\n'
-	'problems VARCHAR(255),\n'
-	'upload_date DATE,\n'
-	'uploader VARCHAR(255),\n'
-	"comments VARCHAR(1000) DEFAULT '',\n"
-	'original_title VARCHAR(255),\n'
-	'publication_type_id TINYINT UNSIGNED,\n'
-	'publisher_code VARCHAR(16),\n'
-	'barcode VARCHAR(13),\n'
-	'dl_code VARCHAR(26),\n'
-	'memory_required SMALLINT UNSIGNED,\n'
-	'protection VARCHAR(255),\n'
-	'run_command VARCHAR(1000),\n'
-	'PRIMARY KEY (filepath_id),\n'
-	'UNIQUE INDEX (filepath),\n'
-	'CONSTRAINT FOREIGN KEY fk_type_id (type_id) REFERENCES nvg_type_ids (type_id),\n'
-	'CONSTRAINT FOREIGN KEY fk_publication_type_id (publication_type_id) REFERENCES nvg_publication_type_ids (type_id)\n'
-	')')
-	cursor.execute(query)
-
-	table_name = 'nvg_title_aliases'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(filepath_id INT UNSIGNED,\n'
-	'title VARCHAR(255),\n'
-	'PRIMARY KEY (filepath_id, title),\n'
-	'CONSTRAINT FOREIGN KEY fk_filepath_id (filepath_id) REFERENCES nvg (filepath_id)\n'
-	')')
-	cursor.execute(query)
-
-	table_name = 'nvg_author_ids'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(author_id SMALLINT UNSIGNED AUTO_INCREMENT,\n'
-	'author_name VARCHAR(255) NOT NULL,\n'
-	'alias_of_author_id SMALLINT UNSIGNED,\n'
-	'PRIMARY KEY (author_id),\n'
-	'CONSTRAINT FOREIGN KEY fk_alias_of_author (alias_of_author_id) REFERENCES nvg_author_ids (author_id)\n'
-	')')
-	cursor.execute(query)
-
-	table_name = 'nvg_file_authors'
-	print('Creating table ' + table_name + '...')
-	query = ('CREATE TABLE ' + table_name + '\n'
-	'(filepath_id INT UNSIGNED,\n'
-	'author_id SMALLINT UNSIGNED,\n'
-	'author_type ENUM (' + author_set_def + '),\n'
-	'author_index SMALLINT UNSIGNED,\n'
-	'PRIMARY KEY (filepath_id, author_id, author_type),\n'
-	'UNIQUE INDEX (filepath_id, author_type, author_index),\n'
-	'CONSTRAINT FOREIGN KEY fk_fa_filepath_id (filepath_id) REFERENCES nvg (filepath_id),\n'
-	'CONSTRAINT FOREIGN KEY fk_fa_author_id (author_id) REFERENCES nvg_author_ids (author_id)'
-	')')
-	cursor.execute(query)
-except sql.OperationalError as db_error:
-	print(('Unable to create table {0}. The following error was '
-		+ 'encountered:').format(table_name))
-	print('Error code: ' + str(db_error.args[0]))
-	print('Error message: ' + db_error.args[1])
-	connection.close()
-	quit()
-
-# Set up the triggers, stored procedures, functions and views by running MySQL
-# directly and processing the SQL files
-db_command_base = ('mysql -h {0} -u {1} --password={2} {3}').format(
-	db_hostname, db_username, db_password, db_name)
-
-# Triggers
-print('Reading triggers from source file {0}...'.format(db_trigger_source_file))
-db_command = (db_command_base + ' < {0}').format(db_trigger_source_file)
-if os.system(db_command) != 0:
-	print(('Unable to create triggers for database {0} on host {1}. '
-		+ 'Please check that the PATH environment variable is set '
-		+ 'correctly, or check with your database administrator that you '
-		+ 'have the appropriate privileges to create and alter '
-		+ 'triggers.').format(db_name, db_hostname))
-	connection.close()
-	quit()
-
-# Stored procedures and functions
-print(('Reading stored procedures and functions from source file '
-	+ '{0}...').format(db_stored_routine_source_file))
-db_command = (db_command_base + ' < {0}').format(db_stored_routine_source_file)
-if os.system(db_command) != 0:
-	print(('Unable to create stored procedures and functions for database {0} '
-		+ 'on host {1}. Please check that the PATH environment variable is '
-		+ 'set correctly, or check with your database administrator that you '
-		+ 'have the appropriate privileges to create and alter stored '
-		+ 'procedures and functions.').format(db_name, db_hostname))
-	connection.close()
-	quit()
-
-# Views
-print(('Reading views from source file {0}...').format(db_view_source_file))
-db_command = (db_command_base + ' < {0}').format(db_view_source_file)
-if os.system(db_command) != 0:
-	print(('Unable to create views for database {0} '
-		+ 'on host {1}. Please check that the PATH environment variable is '
-		+ 'set correctly, or check with your database administrator that you '
-		+ 'have the appropriate privileges to create and alter views.').format(
-		db_name, db_hostname))
-	connection.close()
-	quit()
+# Set up the database
+setup_db()
 
 
 # -----------------------------
