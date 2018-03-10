@@ -68,29 +68,155 @@ The file `create_stored_routines.sql` contains various stored functions and proc
 
 Return a string containing the names of all the authors of the specified type that are associated with the specified filepath ID number, separated by commas.
 
+For example, if the game *Auf Wiedersehen Monty* has a filepath ID number of 1221, the following query will return a string containing the names of all the authors, in the same order that they appear in the `file_id.diz` file:
+
+```sql
+SELECT concat_author_names(1221, 'AUTHOR');
+```
+```
++-------------------------------------------------------------------------+
+| concat_author_names(1221, 'AUTHOR')                                     |
++-------------------------------------------------------------------------+
+| Pete Harrap, Shaun Hollingworth, Chris Kerry, Colin Dooley, Greg Holmes |
++-------------------------------------------------------------------------+
+1 row in set (0.00 sec)
+```
+
+The following query will return a string containing the names of the artists (the people who drew the graphics that are used in the game):
+
+```sql
+SELECT concat_author_names(1221, 'ARTIST');
+```
+```
++-------------------------------------+
+| concat_author_names(1221, 'ARTIST') |
++-------------------------------------+
+| Steve Kerry, Terry Lloyd            |
++-------------------------------------+
+1 row in set (0.00 sec)
+```
+
 ##### `concat_language_descs(INT UNSIGNED filepath_id)`
 
-Return a string containing the names of all the languages that are associated with the specified filepath ID number, separated by commas.
+Return a string containing the names of all the languages that are associated with the specified filepath ID number, separated by commas and in alphabetical order.
+
+For example, the game *2112 AD* displays in-game text in four languages. If it has a filepath ID number of 285, the following query will return a string containing the names of the languages used:
+
+```sql
+SELECT concat_language_descs(285);
+```
+```
++----------------------------------+
+| concat_language_descs(285)       |
++----------------------------------+
+| English, French, German, Spanish |
++----------------------------------+
+1 row in set (0.00 sec)
+```
 
 ##### `concat_title_aliases(INT UNSIGNED filepath_id)`
 
 Return a string containing all the aliases of the specified filepath ID number (i.e. titles other than that which is specified in the `title` column), separated by semi-colons.
 
+For example, the game *Last Ninja 2* is also known by several other names. If it has a filepath ID number of 430, the following query will return a string containing all the other names by which it is known:
+
+```sql
+SELECT concat_title_aliases(430);
+```
+```
++-----------------------------------------------------------------------+
+| concat_title_aliases(430)                                             |
++-----------------------------------------------------------------------+
+| Last Ninja 2, The; Last Ninja 2: Back with a Vengeance; Last Ninja II |
++-----------------------------------------------------------------------+
+1 row in set (0.00 sec)
+```
+
 ##### `get_file_id_diz(INT UNSIGNED filepath_id)`
 
-Create and return the file_id.diz file that is used by ZIP files in the NVG Amstrad CPC software archive.
+Create and return the `file_id.diz` file that is used by ZIP files in the NVG Amstrad CPC software archive.
+
+For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return a string which will look something like this:
+
+```sql
+SELECT get_file_id_diz(2369);
+```
+```
+    ** AMSTRAD CPC SOFTWARE AT FTP.NVG.NTNU.NO : file_id.diz FILE V 3.00 **
+-------------------------------------------------------------------------------
+TITLE:           Roland on the Ropes
+YEAR:            1984
+PUBLISHER:       Amsoft
+PUBLICATION:     Crack
+CRACKER:         Nich
+DEVELOPER:       Indescomp
+AUTHOR:          Paco Menéndez, Fernando Rada, Camilo Cela, Carlos Granados
+LANGUAGE:        English
+MEMORY REQUIRED: 64K
+TYPE:            Arcade game
+SUBTYPE:         Maze exploration/shoot-'em-up
+TITLE SCREEN:    Yes
+CHEAT MODE:      Yes
+RUN COMMAND:     RUN"ROLANDRO"
+UPLOADED:        14/10/2002 by Nicholas Campbell
+-------------------------------------------------------------------------------
+```
 
 ##### `get_file_id_diz_version(INT UNSIGNED filepath_id)`
 
-Return the version number of the file_id.diz file that is used by ZIP files in the NVG Amstrad CPC software archive.
+Return the version number of the `file_id.diz` file that is used by ZIP files in the NVG Amstrad CPC software archive, as a `DECIMAL(3,2)` data type (i.e. 3 digits, with 2 of those digits following the decimal point).
 
-##### `get_language_desc(VARCHAR(5) language_code)`
+This function is intended for internal use in generating `file_id.diz` files (using the `get_file_id_diz` function described above) and validating data that is added to the database (using various triggers).
 
-Select the name of the language associated with the specified IETF language code.
+In the example shown above for the `get_file_id_diz` function, the following query returns `3.00` as the version number:
+
+```sql
+SELECT get_file_id_diz_version(2369);
+```
+```
++-------------------------------+
+| get_file_id_diz_version(2369) |
++-------------------------------+
+| 3.00                          |
++-------------------------------+
+1 row in set (0.00 sec)
+```
+
+##### `get_language_desc(VARCHAR(5) language_tag)`
+
+Return the name of the language associated with the specified [IETF language tag](https://tools.ietf.org/html/rfc5646). Currently the length of the tag is restricted to a maximum of 5 characters, which is sufficient to store a primary language subtag (2 characters) and a region subtag (2 characters).
+
+For example, the IETF language tag for the English language is 'en':
+
+```sql
+SELECT get_language_desc('en');
+```
+```
++-------------------------+
+| get_language_desc('en') |
++-------------------------+
+| English                 |
++-------------------------+
+1 row in set (0.00 sec)
+```
 
 ##### `get_uploaded_string(INT UNSIGNED filepath_id)`
 
 Return a string combining the upload date and the name(s) of the people who uploaded the specified filepath ID number.
+
+In the example shown above for the `get_file_id_diz` function, the query below returns the string used in the `UPLOADED` field of the `file_id.diz` file for *Roland on the Ropes*:
+
+```sql
+SELECT get_uploaded_string(2369);
+```
+```
++---------------------------------+
+| get_uploaded_string(2369)       |
++---------------------------------+
+| 14/10/2002 by Nicholas Campbell |
++---------------------------------+
+1 row in set (0.00 sec)
+```
 
 #### Stored procedures
 
