@@ -136,7 +136,7 @@ SELECT concat_title_aliases(430);
 
 Create and return the `file_id.diz` file that is used by ZIP files in the NVG Amstrad CPC software archive.
 
-For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return a string which will look something like this:
+For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return a string which will look something like the result below:
 
 ```sql
 SELECT get_file_id_diz(2369);
