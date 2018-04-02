@@ -8,7 +8,7 @@ CREATE VIEW nvg_view
 	title_screen, cheat_mode, protected, problems, upload_date, uploader,
 	comments, also_known_as, original_title, publisher, rereleased_by,
 	publication, publisher_code, barcode, dl_code, cracker, developer, author,
-	designer, artist, musician) AS
+	designer, artist, musician, memory_required, protection, run_command) AS
 	SELECT filepath_id, filepath, title, company, YEAR(year),
 
 	-- Convert language codes to names (e.g. 'en' -> 'English')
@@ -42,6 +42,8 @@ CREATE VIEW nvg_view
 	concat_author_names(filepath_id, 'AUTHOR') author,
 	concat_author_names(filepath_id, 'DESIGNER') designer,
 	concat_author_names(filepath_id, 'ARTIST') artist,
-	concat_author_names(filepath_id, 'MUSICIAN') musician
+	concat_author_names(filepath_id, 'MUSICIAN') musician,
+
+	memory_required, protection, run_command
 	FROM nvg n
 	ORDER BY filepath_id;
