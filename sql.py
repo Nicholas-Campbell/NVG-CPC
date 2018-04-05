@@ -12,13 +12,16 @@ the following URL:
 import argparse
 import csv
 import datetime
+import ftplib
 import getopt
 import getpass
 import nvg.csv
 import os
 import pymysql as sql
 import re
+import socket
 import sys
+import tempfile
 import warnings
 
 
@@ -69,7 +72,13 @@ def _print_help():
 	print('Usage: {0} [OPTIONS] [database]\n'.format(sys.argv[0]))
 	print('The following options can be used:')
 	print('  -?, --help          Display this help message and exit.')
+	print('  --build             Rebuild the entire database.')
 	print('  -D, --database=name Database to use.')
+	print('  --ftp-download      Download CSV files from the NVG FTP '
+		+ 'site\n'
+		+ indent + '(ftp://ftp.nvg.ntnu.no/pub/cpc/) instead of using '
+		+ 'locally\n'
+		+ indent + 'stored files.')
 	print('  -h, --host=name     Connect to host.')
 	print('  -p, --password=name Password to use when connecting to host. If '
 		+ 'no password\n'
@@ -82,6 +91,46 @@ def _print_help():
 		+ 'no username\n'
 		+ indent + 'is specified then the current login username will be\n'
 		+ indent + 'used.')
+
+
+def download_file_from_ftp_host(ftp_host, dir, filepath, file_transfer_mode):
+	"""Download a file from an FTP site.
+
+Parameters:
+ftp_host: An ftplib.FTP object representing a connection to an FTP site. A
+    connection must be established and the user must be logged on.
+dir: The directory to download the specified files to.
+filepath: The path of the file to download from the FTP site.
+mode: The file transfer mode to use ('a' = ASCII, 'b' or 'i' = image (binary)).
+
+Returns:
+Nothing.
+"""
+	# Convert the file transfer mode to lower case, and if it is not a valid
+	# mode, raise an exception
+	file_transfer_mode = file_transfer_mode.lower()
+	if file_transfer_mode not in ['a', 'b', 'i']:
+		raise ValueError
+
+	# Check that the directory to download to exists; if it doesn't,
+	# create the directories
+	(file_dir, filename) = os.path.split(filepath)
+	download_dir = os.path.join(dir, file_dir).replace('\\','/')
+	download_filepath = os.path.join(dir, filepath)
+	if not os.path.exists(download_dir):
+		os.makedirs(download_dir)
+
+	# Download the file to the specified directory
+	if file_transfer_mode == 'a':
+		file_handle = open(download_filepath, 'w', encoding='latin-1')
+		ftp_host.retrlines('RETR ' + filepath,
+			lambda file: file_handle.write(file + '\n'))
+	elif file_transfer_mode in ['b', 'i']:
+		file_handle = open(download_filepath, 'wb')
+		ftp_host.retrbinary('RETR ' + filepath,
+			lambda file: file_handle.write(file))
+	file_handle.close()
+
 
 # Set up the database and create tables, triggers, procedures, functions and
 # views
@@ -309,8 +358,8 @@ associated with as the values.
 			line += 1
 		csv_file.close()
 	except FileNotFoundError as file_error:
-		print(('Unable to locate {0}. No information about author aliases will be '
-			+ 'added!').format(author_aliases_csv_filename),
+		print(('Unable to locate {0}. No information about author aliases '
+			+ 'will be added or updated.').format(author_aliases_csv_filename),
 			file=sys.stderr)
 	finally:
 		return author_aliases_dict
@@ -444,6 +493,38 @@ def get_existing_filepath_id_author_info():
 
 def get_existing_type_ids():
 	return build_dict_from_table('nvg_type_ids', 'type_desc', 'type_id')
+
+
+# Create a list of author names and aliases to add to the database, by
+# searching all the author-like fields in the file data (e.g. PUBLISHER,
+# DEVELOPER, AUTHOR) and the dictionary of author aliases
+
+def _get_authors_to_add():
+	authors_to_add = []
+	for filepath in file_data:
+		for field in author_field_list:
+			if field in file_data[filepath]:
+				names = file_data[filepath][field]
+				
+				# The values of each field are comma-delimited
+				author_names_split = names.split(sep=',')
+				for name in author_names_split:
+					name = name.strip()
+					# If the author name is not already on the database, add it
+					# to a list of author names to add to the database
+					if (name not in author_ids_dict and
+						name not in authors_to_add):
+						authors_to_add.append(name)
+
+	# Add aliases and names in the author aliases CSV file to the list of
+	# authors to add to the database
+	for alias, name in author_aliases_dict.items():
+		if alias not in author_ids_dict and alias not in authors_to_add:
+			authors_to_add.append(alias)
+		if name not in author_ids_dict and name not in authors_to_add:
+			authors_to_add.append(name)
+
+	return authors_to_add
 
 
 # Retrieve all the existing title aliases from the database
@@ -640,9 +721,14 @@ db_name_set_in_options = False	# Has the name of the database been set in the
 build_db_flag = False			# Does the database need to be rebuilt?
 silent_output = False			# Silent output mode
 
+ftp_hostname = 'ftp.nvg.ntnu.no'
+ftp_nvg_csv_filepath = 'pub/cpc/00_table.csv'
+download_files_from_ftp_host = False
+
 try:
 	optlist, args = getopt.getopt(sys.argv[1:], '?D:h:u:p:s',
-		['help', 'database=', 'host=', 'user=', 'password=', 'silent', 'build'])
+		['help', 'database=', 'host=', 'user=', 'password=', 'silent',
+		'build', 'ftp-download'])
 	# If more than one database name is supplied, then print the help message
 	# and quit
 	if len(args) > 1:
@@ -669,6 +755,8 @@ try:
 				silent_output = True
 			elif option == '--build':
 				build_db_flag = True
+			elif option == '--ftp-download':
+				download_files_from_ftp_host = True
 
 		# Check if more than one database has been specified (i.e. by using
 		# -D or --database, as well as specifying the name of the database as
@@ -692,14 +780,78 @@ if db_password == None:
 # Read and process the CSV files
 # ------------------------------
 
+# If author_aliases file isn't found, aliases will be removed from database!
+# Prevent this from happening!
+
+file_data = {}
+
+# If the FTP download option has been selected, then download the relevant
+# files from the NVG FTP site
+if download_files_from_ftp_host:
+	# Connect and log on to the FTP host
+	try:
+		print('Connecting to {0}...'.format(ftp_hostname))
+		ftp = ftplib.FTP(ftp_hostname)
+		ftp.login(user='anonymous', passwd='anonymous@nvg.ntnu.no')
+	# socket.gaierror exception is raised if it is not possible to connect
+	# to the FTP host
+	except socket.gaierror:
+		print('Unable to connect to FTP host {0}.'.format(ftp_hostname),
+			file=sys.stderr)
+		quit()
+	# ftplib.error_perm exception is raised if it is not possible to log on
+	# to the FTP host; the reply is also included
+	except ftplib.error_perm as ftp_error:
+		print(('Unable to log on to FTP host {0}. The following error was '
+			+ 'encountered: ').format(ftp_hostname), file=sys.stderr)
+		print(ftp_error)
+		quit()
+
+	# Create a temporary directory to download files to
+	temp_dir = tempfile.TemporaryDirectory()
+
+	# Download files from the FTP host
+	file_list = [ftp_nvg_csv_filepath]
+	for file_to_download in file_list:
+		try:
+			print('Downloading {0} from {1}...'.format(file_to_download,
+				ftp_hostname))
+			download_file_from_ftp_host(ftp, temp_dir.name,
+				file_to_download, 'b')
+		except ftplib.error_perm as ftp_error:
+			print(('Unable to download {0} from {1}. The following error '
+				+ 'occurred:').format(file_to_download, ftp_hostname),
+				file=sys.stderr)
+			print(ftp_error, file=sys.stderr)
+
+	# Close the FTP connection
+	ftp.quit()
+
 # Read the main CSV file
-print('Reading {0}...'.format(nvg_csv_filename))
-file_data = nvg.csv.read_nvg_csv_file(nvg_csv_filename)
+try:
+	if download_files_from_ftp_host:
+		nvg_csv_filename = os.path.join(temp_dir.name,
+			ftp_nvg_csv_filepath).replace('\\','/')
+	print('Reading {0}...'.format(nvg_csv_filename))
+
+	file_data = nvg.csv.read_nvg_csv_file(nvg_csv_filename)
+# If the main CSV file is missing, then print an error message and quit
+except FileNotFoundError:
+	print('Unable to read {0}.'.format(nvg_csv_filename))
+	if download_files_from_ftp_host:
+		temp_dir.cleanup()
+	quit()
 
 # Read the CSV file containing the list of author aliases
 print('Reading list of author aliases in {0}...'.format(
 	author_aliases_csv_filename))
-author_aliases_dict = read_author_aliases_csv_file(author_aliases_csv_filename)
+author_aliases_dict = read_author_aliases_csv_file(
+	author_aliases_csv_filename)
+
+# If a temporary directory was created earlier, delete the directory and
+# its contents
+if download_files_from_ftp_host:
+	temp_dir.cleanup()
 
 # Some file types are incorrectly formatted, so they need to be corrected
 type_correction_dict = {'Games compilation': 'Compilation',
@@ -817,30 +969,8 @@ else:
 		connection.close()
 		quit()
 
-# Search all the author-like fields in the file data (e.g. PUBLISHER,
-# DEVELOPER, AUTHOR) and find which names are not already on the database
-authors_to_add = []
-for filepath in file_data:
-	for field in author_field_list:
-		if field in file_data[filepath]:
-			names = file_data[filepath][field]
-			
-			# The values of each field are comma-delimited
-			author_names_split = names.split(sep=',')
-			for name in author_names_split:
-				name = name.strip()
-				# If the author name is not already on the database, add it to
-				# a list of author names to add to the database
-				if name not in author_ids_dict and name not in authors_to_add:
-					authors_to_add.append(name)
-
-# Add aliases and names in the author aliases CSV file to the list of authors
-# to add to the database
-for alias, name in author_aliases_dict.items():
-	if alias not in author_ids_dict and alias not in authors_to_add:
-		authors_to_add.append(alias)
-	if name not in author_ids_dict and name not in authors_to_add:
-		authors_to_add.append(name)
+# Get a list of author names that need to be added to the database
+authors_to_add = _get_authors_to_add()
 
 
 # -------------------------
@@ -906,102 +1036,107 @@ if authors_to_add:
 				authors_added[name]['ID']))
 
 
-# Update the alias ID numbers associated with authors
+# Update the alias ID numbers associated with authors, but only if the
+# author aliases CSV file is available
 
 # Create a dictionary of author names to update, with the values being the
 # previous alias ID number associated with the author name
 author_aliases_to_update = {}
 
-for author_name in author_ids_dict:
-	if 'Alias ID' in author_ids_dict[author_name]:
-		current_alias_of_author_id = author_ids_dict[author_name]['Alias ID']
-	else:
-		current_alias_of_author_id = None
-
-	# If an author is not in the list of author aliases, and the author name
-	# is an alias of another name (i.e. there is an alias ID number assigned),
-	# delete the alias ID and add the author name to the list of authors to
-	# update
-	if (author_name not in author_aliases_dict and
-		current_alias_of_author_id):
-		author_aliases_to_update[author_name] = current_alias_of_author_id
-		del author_ids_dict[author_name]['Alias ID']
-
-	# If an author is in the list of author aliases, and there is no alias ID
-	# set or the alias ID currently on the database is different to what is
-	# in the list of author aliases, then update the alias ID and add the
-	# author name to the list of authors to update
-	elif author_name in author_aliases_dict:
-		new_alias_of_author_id = \
-			author_ids_dict[author_aliases_dict[author_name]]['ID']
-		if ('Alias ID' not in author_ids_dict[author_name] or
-			new_alias_of_author_id != current_alias_of_author_id):
-			author_aliases_to_update[author_name] = current_alias_of_author_id
-			author_ids_dict[author_name]['Alias ID'] = new_alias_of_author_id
-
-# Update the database with the new author alias information
-table_name = 'nvg_author_ids'
-print('Updating author aliases...')
-query_base = 'UPDATE {0} SET alias_of_author_id = '.format(table_name)
-message_list = []
-
-try:
-	connection.begin()
-	for author_name in sorted(author_aliases_to_update, key=str.lower):
-		query = query_base
-		params = []
-
-		# The author to update no longer has an alias
-		if 'Alias ID' not in author_ids_dict[author_name]:
-			query += 'NULL'
-			prev_alias_of_author_id = author_aliases_to_update[author_name]
-			for author_name2 in author_ids_dict:
-				if author_ids_dict[author_name2]['ID'] == prev_alias_of_author_id:
-					message_list.append(('Removed {0} (ID {1}) as an alias of '
-						+ '{2} (ID {3}).').format(author_name,
-						author_ids_dict[author_name]['ID'], author_name2,
-						author_ids_dict[author_name2]['ID']))
-
-		# The author to update has a new alias
+if author_aliases_dict:
+	for author_name in author_ids_dict:
+		if 'Alias ID' in author_ids_dict[author_name]:
+			current_alias_of_author_id = \
+				author_ids_dict[author_name]['Alias ID']
 		else:
-			query += '%s'
-			params.append(author_ids_dict[author_name]['Alias ID'])
-			message_list.append(('Added {0} (ID {1}) as an alias of {2} '
-				+ '(ID {3}).').format(author_name,
-				str(author_ids_dict[author_name]['ID']),
-				author_aliases_dict[author_name],
-				str(author_ids_dict[author_aliases_dict[author_name]]['ID'])))
+			current_alias_of_author_id = None
 
-		query += ' WHERE author_id = %s'
-		params.append(author_ids_dict[author_name]['ID'])
+		# If an author is not in the list of author aliases, and the author
+		# name is an alias of another name (i.e. there is an alias ID number
+		# assigned), delete the alias ID and add the author name to the list
+		# of authors to update
+		if (author_name not in author_aliases_dict and
+			current_alias_of_author_id):
+			author_aliases_to_update[author_name] = current_alias_of_author_id
+			del author_ids_dict[author_name]['Alias ID']
 
-		# Update the relevant row in the table of author names
-		try:
-			cursor.execute(query, params)
-		except sql.OperationalError as db_error:
-			connection.rollback()
-			print(('Unable to update author name {0} in table {1}. The '
-				+ 'following error was encountered:').format(author_name,
-				table_name), file=sys.stderr)
-			print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
-			print('Error message: ' + db_error.args[1], file=sys.stderr)
-			connection.close()
-			quit()
+		# If an author is in the list of author aliases, and there is no alias
+		# ID set or the alias ID currently on the database is different to
+		# what is in the list of author aliases, then update the alias ID and
+		# add the author name to the list of authors to update
+		elif author_name in author_aliases_dict:
+			new_alias_of_author_id = \
+				author_ids_dict[author_aliases_dict[author_name]]['ID']
+			if ('Alias ID' not in author_ids_dict[author_name] or
+				new_alias_of_author_id != current_alias_of_author_id):
+				author_aliases_to_update[author_name] = current_alias_of_author_id
+				author_ids_dict[author_name]['Alias ID'] = new_alias_of_author_id
 
-	# Commit all the updates to the table of author names
-	connection.commit()
+	# Update the database with the new author alias information
+	table_name = 'nvg_author_ids'
+	print('Updating author aliases...')
+	query_base = 'UPDATE {0} SET alias_of_author_id = '.format(table_name)
+	message_list = []
 
-	# Print a list of author aliases that were added and removed
-	if silent_output == False:
-		if message_list:
-			print('\n'.join(message_list))
-except sql.OperationalError as db_error:
-	print(('Unable to insert author {0} into table {1}. The following error '
-		+ 'was encountered:').format(author_name, table_name), file=sys.stderr)
-	print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
-	print('Error message: ' + db_error.args[1], file=sys.stderr)
-	connection.close()
-	quit()
+	try:
+		connection.begin()
+		for author_name in sorted(author_aliases_to_update, key=str.lower):
+			query = query_base
+			params = []
+
+			# The author to update no longer has an alias
+			if 'Alias ID' not in author_ids_dict[author_name]:
+				query += 'NULL'
+				prev_alias_of_author_id = author_aliases_to_update[author_name]
+				for author_name2 in author_ids_dict:
+					if (author_ids_dict[author_name2]['ID'] ==
+						prev_alias_of_author_id):
+						message_list.append(('Removed {0} (ID {1}) as an '
+							+ 'alias of {2} (ID {3}).').format(author_name,
+							author_ids_dict[author_name]['ID'], author_name2,
+							author_ids_dict[author_name2]['ID']))
+
+			# The author to update has a new alias
+			else:
+				query += '%s'
+				params.append(author_ids_dict[author_name]['Alias ID'])
+				message_list.append(('Added {0} (ID {1}) as an alias of {2} '
+					+ '(ID {3}).').format(author_name,
+					str(author_ids_dict[author_name]['ID']),
+					author_aliases_dict[author_name],
+					str(author_ids_dict[author_aliases_dict[author_name]]['ID'])))
+
+			query += ' WHERE author_id = %s'
+			params.append(author_ids_dict[author_name]['ID'])
+
+			# Update the relevant row in the table of author names
+			try:
+				cursor.execute(query, params)
+			except sql.OperationalError as db_error:
+				connection.rollback()
+				print(('Unable to update author name {0} in table {1}. The '
+					+ 'following error was encountered:').format(author_name,
+					table_name), file=sys.stderr)
+				print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
+				print('Error message: ' + db_error.args[1], file=sys.stderr)
+				connection.close()
+				quit()
+
+		# Commit all the updates to the table of author names
+		connection.commit()
+
+		# Print a list of author aliases that were added and removed
+		if silent_output == False:
+			if message_list:
+				print('\n'.join(message_list))
+	except sql.OperationalError as db_error:
+		print(('Unable to insert author {0} into table {1}. The following '
+			+ 'error was encountered:').format(author_name, table_name),
+			file=sys.stderr)
+		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
+		print('Error message: ' + db_error.args[1], file=sys.stderr)
+		connection.close()
+		quit()
 
 # ----------------------------------------------------------------------------
 # Convert information in the CSV file data to the corresponding ID numbers and
