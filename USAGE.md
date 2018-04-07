@@ -48,10 +48,11 @@ file_data = nvg.fileid.read_file_id_diz('rolanrop.zip')
 print(file_data)
 ```
 
-If you want to view the contents of the `file_id.diz` file without processing it, use the `print_file_id_diz` function in the `nvg.fileid` module:
+If you want to retrieve the contents of the `file_id.diz` file without processing it, use the `get_file_id_diz` function in the `nvg.fileid` module:
 
 ```python
-nvg.fileid.print_file_id_diz('rolanrop.zip')
+file_id_diz_str = nvg.fileid.get_file_id_diz('rolanrop.zip')
+print(file_id_diz_str)
 ```
 
 ### SQL
@@ -136,7 +137,7 @@ SELECT concat_title_aliases(430);
 
 Create and return the `file_id.diz` file that is used by ZIP files in the NVG Amstrad CPC software archive.
 
-For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return a string which will look something like this:
+For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return a string which will look something like the result below:
 
 ```sql
 SELECT get_file_id_diz(2369);
