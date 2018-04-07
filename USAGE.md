@@ -48,10 +48,11 @@ file_data = nvg.fileid.read_file_id_diz('rolanrop.zip')
 print(file_data)
 ```
 
-If you want to view the contents of the `file_id.diz` file without processing it, use the `print_file_id_diz` function in the `nvg.fileid` module:
+If you want to retrieve the contents of the `file_id.diz` file without processing it, use the `get_file_id_diz` function in the `nvg.fileid` module:
 
 ```python
-nvg.fileid.print_file_id_diz('rolanrop.zip')
+file_id_diz_str = nvg.fileid.get_file_id_diz('rolanrop.zip')
+print(file_id_diz_str)
 ```
 
 ### SQL
