@@ -244,15 +244,15 @@ COMMENTS)."""
 	return file_data
 
 
-def print_file_id_diz(zip_filepath):
-	"""Read a ZIP file and print the contents of the file_id.diz file within
-the archive, if it exists, to standard output.
+def get_file_id_diz(zip_filepath):
+	"""Read a ZIP file and return the contents of the file_id.diz file within
+the archive, but don't process it.
 
 Parameters:
 zip_filepath: The filepath of the ZIP file.
 
 Returns:
-Nothing.
+A string containing the contents of the file_id.diz file.
 
 Raises:
 FileNotFoundError: Either the ZIP file was not found, or there is no file
@@ -270,11 +270,15 @@ named file_id.diz within the ZIP file."""
 				raise FileNotFoundError('There is no file named '
 					+ file_id_diz_filename + ' in the archive ' + zip_filepath)
 
+			file_id_diz_str = ''
+
 			# Read the file_id.diz file in the temporary directory
 			with open(path.join(temp_dir, file_id_diz_filename), 'r',
 				encoding='latin-1') as file_id_diz_handle:
 				for line in file_id_diz_handle:
-					print(line.strip('\n'))
+					file_id_diz_str += line.strip() + '\n'
+
+			return file_id_diz_str
 
 
 # Script to test functions used in this module
@@ -282,9 +286,13 @@ named file_id.diz within the ZIP file."""
 if __name__ == '__main__':
 	zip_filename = input('Enter filepath of ZIP file: ').strip()
 
-	print('Reading data from {:s} in {:s}...'.format(
-		file_id_diz_filename, zip_filename))
+	print('Reading data from {0} in {1}...'.format(file_id_diz_filename,
+		zip_filename))
+
+	# Process the contents of the file_id.diz file in the specified ZIP file
 	file_data = read_file_id_diz(zip_filename)
 	print(file_data)
 	print()
-	print_file_id_diz(zip_filename)
+
+	# Display the contents of the file_id.diz file without processing it
+	print(get_file_id_diz(zip_filename))
