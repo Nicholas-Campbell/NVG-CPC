@@ -4,12 +4,15 @@
 DROP VIEW IF EXISTS nvg_view;
 
 CREATE VIEW nvg_view
-	(filepath_id, filepath, title, company, year, language, type, subtype,
-	title_screen, cheat_mode, protected, problems, upload_date, uploader,
-	comments, also_known_as, original_title, publisher, rereleased_by,
-	publication, publisher_code, barcode, dl_code, cracker, developer, author,
-	designer, artist, musician, memory_required, protection, run_command) AS
-	SELECT filepath_id, filepath, title, company, YEAR(year),
+	(filepath_id, filepath, file_size, cpcsofts_id, title, company, year,
+	language, type, subtype, title_screen, cheat_mode, protected, problems,
+	upload_date, uploader, comments, also_known_as, original_title, publisher,
+	rereleased_by, publication, publisher_code, barcode, dl_code, cracker,
+	developer, author, designer, artist, musician, memory_required, protection,
+	run_command) AS
+
+	SELECT filepath_id, filepath, file_size, cpcsofts_id, title, company,
+	YEAR(year),
 
 	-- Convert language codes to names (e.g. 'en' -> 'English')
 	concat_language_descs(filepath_id) language,

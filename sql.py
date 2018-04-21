@@ -7,7 +7,7 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-04-02
+# Last update: 2018-04-21
 
 import argparse
 import csv
@@ -32,7 +32,7 @@ import warnings
 # Data relating to CSV files from the NVG archive
 nvg_csv_filename = r'00_table.csv'
 author_aliases_csv_filename = r'author_aliases.csv'
-file_data = {}
+cpcpower_csv_filename = r'cpcpower.csv'
 
 author_field_list = ['PUBLISHER','RE-RELEASED BY','CRACKER','DEVELOPER',
 	'AUTHOR','DESIGNER','ARTIST','MUSICIAN']
@@ -202,6 +202,7 @@ def _setup_db(db_name):
 		'(filepath_id INT UNSIGNED AUTO_INCREMENT,\n'
 		'filepath VARCHAR(260) CHARACTER SET ascii NOT NULL,\n'
 		'file_size INT UNSIGNED NOT NULL,\n'
+		'cpcsofts_id SMALLINT UNSIGNED,\n'
 		'title VARCHAR(255),\n'
 		'company VARCHAR(255),\n'
 		'year DATE,\n'
@@ -651,7 +652,7 @@ the keys, and their ID numbers as the values.
 	connection.commit()
 	return author_ids_dict
 
-def delete_filepaths_from_db():
+def _delete_filepaths_from_db():
 	# Search the list of filepaths in the main CSV file that aren't already in
 	# the database
 
@@ -723,6 +724,7 @@ silent_output = False			# Silent output mode
 
 ftp_hostname = 'ftp.nvg.ntnu.no'
 ftp_nvg_csv_filepath = 'pub/cpc/00_table.csv'
+ftp_cpcpower_csv_filepath = 'pub/cpc/cpcpower.csv'
 download_files_from_ftp_host = False
 
 try:
@@ -780,10 +782,8 @@ if db_password == None:
 # Read and process the CSV files
 # ------------------------------
 
-# If author_aliases file isn't found, aliases will be removed from database!
-# Prevent this from happening!
-
 file_data = {}
+cpcpower_data = {}
 
 # If the FTP download option has been selected, then download the relevant
 # files from the NVG FTP site
@@ -795,7 +795,7 @@ if download_files_from_ftp_host:
 		ftp.login(user='anonymous', passwd='anonymous@nvg.ntnu.no')
 	# socket.gaierror exception is raised if it is not possible to connect
 	# to the FTP host
-	except socket.gaierror:
+	except (socket.gaierror, TimeoutError):
 		print('Unable to connect to FTP host {0}.'.format(ftp_hostname),
 			file=sys.stderr)
 		quit()
@@ -811,7 +811,7 @@ if download_files_from_ftp_host:
 	temp_dir = tempfile.TemporaryDirectory()
 
 	# Download files from the FTP host
-	file_list = [ftp_nvg_csv_filepath]
+	file_list = [ftp_nvg_csv_filepath, ftp_cpcpower_csv_filepath]
 	for file_to_download in file_list:
 		try:
 			print('Downloading {0} from {1}...'.format(file_to_download,
@@ -833,7 +833,6 @@ try:
 		nvg_csv_filename = os.path.join(temp_dir.name,
 			ftp_nvg_csv_filepath).replace('\\','/')
 	print('Reading {0}...'.format(nvg_csv_filename))
-
 	file_data = nvg.csv.read_nvg_csv_file(nvg_csv_filename)
 # If the main CSV file is missing, then print an error message and quit
 except FileNotFoundError:
@@ -847,6 +846,23 @@ print('Reading list of author aliases in {0}...'.format(
 	author_aliases_csv_filename))
 author_aliases_dict = read_author_aliases_csv_file(
 	author_aliases_csv_filename)
+
+# Read the CSV file containing the list of CPCSOFTS ID numbers associated with
+# files on NVG
+try:
+	if download_files_from_ftp_host:
+		cpcpower_csv_filename = os.path.join(temp_dir.name,
+			ftp_cpcpower_csv_filepath).replace('\\','/')
+	print('Reading list of CPCSOFTS ID numbers in {0}...'.format(
+		cpcpower_csv_filename))
+	cpcpower_data = nvg.csv.read_cpcpower_csv_file(cpcpower_csv_filename)
+
+# If the main CSV file is missing, then print an error message and quit
+except FileNotFoundError:
+	print(('Unable to read {0}. CPCSOFTS ID numbers will not be added or '
+		+ 'updated.').format(cpcpower_csv_filename))
+	if download_files_from_ftp_host:
+		temp_dir.cleanup()
 
 # If a temporary directory was created earlier, delete the directory and
 # its contents
@@ -942,10 +958,6 @@ else:
 			'error was encountered:').format(db_name), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
-
-	# Delete filepaths from the database that aren't in the main CSV file
-	# (00_table.csv)
-	delete_filepaths_from_db()
 
 	# Iterate the list of filepaths that are already on the database, and add
 	# their ID numbers to the dictionary of filepaths in the main CSV file
@@ -1396,6 +1408,11 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 	connection.close()
 	quit()
 
+# If the build flag is not set, then delete filepaths from the database that
+# aren't in the main CSV file
+if build_db_flag == False:
+	_delete_filepaths_from_db()
+
 # Insert new filepaths into the database
 query_base = ('INSERT INTO ' + table_name + ' (filepath, file_size, '
 	+ 'title, company, year, language, type_id, subtype, title_screen, '
@@ -1722,6 +1739,42 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 	print('Error message: ' + db_error.args[1], file=sys.stderr)
 	connection.close()
 	quit()
+
+# Insert CPCSOFTS ID numbers, if the CPC-POWER CSV file exists
+
+table_name = 'nvg'
+
+if cpcpower_data:
+	print('Updating CPCSOFTS ID numbers in table {0}...'.format(table_name))
+	query = ('UPDATE ' + table_name
+		+ ' SET cpcsofts_id = %s WHERE filepath = %s')
+
+	# Check if any files are listed in the main CSV file but are not listed in
+	# the CPC-POWER CSV file
+	for filepath in file_data:
+		if filepath not in cpcpower_data:
+			print('{0} is not listed in {1}.'.format(filepath,
+				cpcpower_csv_filename), file=sys.stderr)
+
+	try:
+		connection.begin()
+		for filepath in sorted(cpcpower_data):
+			# Check that each ZIP file listed in the CPC-POWER CSV file is
+			# also listed in the main CSV file
+			if filepath[-4:].lower() == '.zip':
+				if filepath not in file_data:
+					print('{0} is not in list of files on NVG.'.format(
+						filepath), file=sys.stderr)
+				else:
+					cursor.execute(query, (cpcpower_data[filepath], filepath))
+		connection.commit()
+	except (sql.OperationalError, sql.InternalError) as db_error:
+		print(('Unable to insert rows into table {0}. The following error '
+			+ 'was encountered:').format(table_name), file=sys.stderr)
+		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
+		print('Error message: ' + db_error.args[1], file=sys.stderr)
+		connection.close()
+		quit()
 
 # Everything has been set up, so close the connection
 connection.close()

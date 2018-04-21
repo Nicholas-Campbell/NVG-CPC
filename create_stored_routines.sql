@@ -172,9 +172,9 @@ DROP PROCEDURE IF EXISTS get_file_info;
 DELIMITER //
 CREATE PROCEDURE get_file_info(IN filepath_id_param INT UNSIGNED)
 BEGIN
-	SELECT filepath, file_size, title, company, YEAR(year) AS year, language,
-	type_id, subtype, title_screen, cheat_mode, protected, problems,
-	upload_date, uploader, comments,
+	SELECT filepath, file_size, cpcsofts_id, title, company,
+	YEAR(year) AS year, language, type_id, subtype, title_screen, cheat_mode,
+	protected, problems, upload_date, uploader, comments,
 	concat_title_aliases(filepath_id_param) AS title_aliases, original_title,
 	concat_author_names(filepath_id_param, 'PUBLISHER') AS publisher,
 	concat_author_names(filepath_id_param, 'RE-RELEASED BY') AS rereleased_by,

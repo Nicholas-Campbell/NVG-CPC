@@ -6,11 +6,12 @@
 # <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 #
 # Initial version by Nicholas Campbell 2018-01-06
-# Last update: 2018-01-21
+# Last update: 2018-04-21
 
 import csv	# Intended to import Python's built-in CSV module
 from os import path
 import re
+import sys
 
 # Initialise variables used by functions
 
@@ -66,22 +67,54 @@ A dictionary containing filepaths as the keys, and a dictionary of field names
 	return file_data
 
 
-# Script to test functions used in this module
+def read_cpcpower_csv_file(csv_filename):
+	"""Read a CSV file that lists filepaths on the NVG FTP site at
+<ftp://ftp.nvg.ntnu.no/pub/cpc/> and their corresponding ID numbers on the
+CPC-POWER web site at <http://www.cpc-power.com/>.
 
-if __name__ == '__main__':
-	csv_filename = input('Enter filepath of CSV file: ').strip()
+If the ID number column is blank, it means that the ID number associated with
+the file is unknown; this is converted to a value of None.
 
-	file_data = read_nvg_csv_file(csv_filename)
-	filepath = None
-	while filepath != '':
-		filepath = input('Enter filepath to search for: ').strip()
-		if filepath == '':
-			break
+If the ID number column is 0, it means that the file has no entry on CPC-POWER.
 
-		if filepath in file_data:
-			for field in csv_field_names:
-				if field in file_data[filepath]:
-					print(field + ': ' + str(file_data[filepath][field]))
-		else:
-			print(filepath + ' does not exist in NVG file data.')
-		print()
+Parameters:
+csv_filename: The filepath of the CSV file.
+
+Returns:
+A dictionary containing filepaths as the keys, and the CPCSOFTS/CPC-POWER ID
+numbers as the values."""
+
+	cpcpower_data = {}
+
+	line = 0
+	with open(csv_filename, newline='', encoding='latin-1') as csv_file:
+		csv_file_reader = csv.reader(csv_file, dialect='excel', delimiter=',')
+
+		# Skip the first line of the CSV file, which contains the field names
+		next(csv_file_reader)
+		line += 1
+
+		# Read all the remaining lines in the CSV file one at a time
+		for row in csv_file_reader:
+			# Get the filepath, which acts as the key
+			filepath = row[0].strip()
+
+			# Get the CPCSOFTS ID, which acts as the value
+
+			cpcsofts_id_str = row[1].strip()
+			try:
+				if cpcsofts_id_str == '':
+					cpcpower_data[filepath] = None
+				else:
+					cpcsofts_id = int(cpcsofts_id_str)
+					if cpcsofts_id < 0:
+						raise ValueError
+					else:
+						cpcpower_data[filepath] = cpcsofts_id
+			except ValueError:
+				print(('Invalid CPCSOFTS ID number for file {0} in {1}. The ID '
+					+ 'number will be set to None.').format(filepath,
+					csv_filename), file=sys.stderr)
+				cpcpower_data[filepath] = None
+
+	return cpcpower_data
