@@ -135,7 +135,7 @@ SELECT concat_title_aliases(430);
 
 ##### `get_file_id_diz(INT UNSIGNED filepath_id)`
 
-Create and return the `file_id.diz` file that is used by ZIP files in the NVG Amstrad CPC software archive.
+Return the contents of the `file_id.diz` file that is used by ZIP files in the NVG Amstrad CPC software archive.
 
 For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return a string which will look something like the result below:
 
@@ -225,25 +225,181 @@ SELECT get_uploaded_string(2369);
 
 Select the specified author ID number and all the author ID numbers which are aliases of the specified author ID number.
 
+For example, the musician César Astudillo is often credited as Gominolas. If the author ID number for César Astudillo is 471, then the following query will return that ID number and the author ID number for his alias of Gominolas:
+
+```sql
+CALL get_aliases_of_author_id(471);
+```
+```
++-----------+
+| author_id |
++-----------+
+|       471 |
+|       861 |
++-----------+
+```
+
 ##### `get_author_ids(INT UNSIGNED filepath_id)`
 
 Select all the author ID numbers, and their types, that are associated with the specified filepath ID number.
+
+For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return the ID numbers and types of all the authors associated with it:
+
+```sql
+CALL get_author_ids(2369);
+```
+```
++-----------+-------------+--------------+
+| author_id | author_type | author_index |
++-----------+-------------+--------------+
+|       103 | PUBLISHER   |            0 |
+|      1578 | CRACKER     |            0 |
+|       961 | DEVELOPER   |            0 |
+|      1667 | AUTHOR      |            0 |
+|       741 | AUTHOR      |            1 |
+|       315 | AUTHOR      |            2 |
+|       328 | AUTHOR      |            3 |
++-----------+-------------+--------------+
+```
+
+The `author_index` column specifies the order in which authors of the same type will appear in the corresponding field in the `file_id.diz` file, so in the above example, the name of the author with ID number 1667 will appear first in the `AUTHOR` field, followed by 741, then 315, and finally 328. The example in the **`get_file_id_diz`** function above shows how the authors are displayed in the `file_id.diz` file.
+
+The procedure **`get_author_names`** (see below) returns the names of each author as well as their ID numbers.
 
 ##### `get_author_names(INT UNSIGNED filepath_id)`
 
 Select all the author ID numbers, and their names and types, that are associated with the specified filepath ID number.
 
+For example, if the game *Roland on the Ropes* has a filepath ID number of 2369, the following query will return the ID numbers and types of all the authors associated with it:
+
+```sql
+CALL get_author_names(2369);
+```
+```
++-----------+-----------------+-------------+--------------+
+| author_id | author_name     | author_type | author_index |
++-----------+-----------------+-------------+--------------+
+|       103 | Amsoft          | PUBLISHER   |            0 |
+|      1578 | Nich            | CRACKER     |            0 |
+|       961 | Indescomp       | DEVELOPER   |            0 |
+|      1667 | Paco Menéndez   | AUTHOR      |            0 |
+|       741 | Fernando Rada   | AUTHOR      |            1 |
+|       315 | Camilo Cela     | AUTHOR      |            2 |
+|       328 | Carlos Granados | AUTHOR      |            3 |
++-----------+-----------------+-------------+--------------+
+```
+
+The `author_index` column specifies the order in which authors of the same type will appear in the corresponding field in the `file_id.diz` file, so in the above example, Paco Menéndez will appear first in the `AUTHOR` field, followed by Fernando Rada, then Camilo Cela, and finally Carlos Granados. The example in the **`get_file_id_diz`** function shows how the authors are displayed in the `file_id.diz` file.
+
 ##### `get_filepath_ids_by_author(SMALLINT UNSIGNED author_id)`
 
-Select all the filepath ID numbers that are associated with the specified author ID number.
+Select all the filepath ID numbers that are associated with the specified author ID number, and also select the roles in which the author was involved (e.g. developer, author, artist, musician, publisher).
+
+For example, if David Perry has an author ID number of 559, the following query will return the filepath ID numbers that he has worked on and his roles in each of them:
+
+```sql
+CALL get_filepath_ids_by_author(559);
+```
+```
++-------------+-------------+
+| filepath_id | author_type |
++-------------+-------------+
+|         489 | AUTHOR      |
+|         490 | AUTHOR      |
+|        1283 | AUTHOR      |
+|        1382 | AUTHOR      |
+|        1505 | AUTHOR      |
+|        1637 | DESIGNER    |
+|        1758 | AUTHOR      |
+|        2197 | AUTHOR      |
+|        2406 | AUTHOR      |
+|        2406 | DESIGNER    |
+|        2466 | AUTHOR      |
+|        2652 | AUTHOR      |
+|        2714 | AUTHOR      |
++-------------+-------------+
+```
+
+The procedure **`get_titles_by_author`** is similar, but it also returns the titles associated with each filepath ID number.
 
 ##### `get_file_info(INT UNSIGNED filepath_id)`
 
-Select all information stored in the database about the specified filepath ID number. Author names are selected instead of ID numbers.
+Select all information stored in the database about the specified filepath ID number. Author names are returned instead of their ID numbers.
+
+For example, if the game *2112 AD* has a filepath ID number of 285, the following query will return all the information about this game in the database:
+
+```sql
+CALL get_file_info(285);
+```
+```
+*************************** 1. row ***************************
+           filepath: games/adventur/graphic/2112ad.zip
+          file_size: 24426
+        cpcsofts_id: 191
+              title: 2112 AD
+            company: NULL
+               year: 1986
+           language: de,en,es,fr
+            type_id: 10
+            subtype: Arcade adventure
+       title_screen: Yes
+         cheat_mode: Yes
+          protected: NULL
+           problems: NULL
+        upload_date: 2012-08-21
+           uploader: Nicholas Campbell & Abraxas
+           comments: Keyboard controls are Z,X,N,M,<. This is a crack of the cassette version of the game; there is no title screen on the disc version. Games can be saved to cassette or disc as 2112DATA.
+      title_aliases: NULL
+     original_title: NULL
+          publisher: Design Design
+      rereleased_by: NULL
+publication_type_id: 3
+     publisher_code: NULL
+            barcode: NULL
+            dl_code: NULL
+            cracker: Nich
+          developer: NULL
+             author: Graham Stafford
+           designer: Graham Stafford, Stuart Ruecroft
+             artist: Stuart Ruecroft
+           musician: NULL
+    memory_required: 64
+         protection: NULL
+        run_command: RUN"2112AD"
+```
 
 ##### `get_titles_by_author(SMALLINT UNSIGNED author_id)`
 
-Select all the titles that are associated with the specified author ID number.
+Select all the filepath ID numbers and titles that are associated with the specified author ID number, and also select the roles in which the author was involved (e.g. developer, author, artist, musician, publisher).
+
+For example, if David Perry has an author ID number of 559, the following query will return the filepath ID numbers and titles that he has worked on and his roles in each of them:
+
+```sql
+CALL get_titles_by_author(559);
+```
+```
++-------------+-----------------------------------+-------------+
+| filepath_id | title                             | author_type |
++-------------+-----------------------------------+-------------+
+|        1283 | Beyond the Ice Palace             | AUTHOR      |
+|        1382 | Captain Planet and the Planeteers | AUTHOR      |
+|        1505 | Dan Dare III: The Escape          | AUTHOR      |
+|        1637 | Extreme                           | DESIGNER    |
+|        1758 | Great Gurianos                    | AUTHOR      |
+|        2197 | Paperboy 2                        | AUTHOR      |
+|         489 | Pyjamarama                        | AUTHOR      |
+|         490 | Pyjamarama                        | AUTHOR      |
+|        2406 | Savage                            | AUTHOR      |
+|        2406 | Savage                            | DESIGNER    |
+|        2466 | Smash TV                          | AUTHOR      |
+|        2652 | Teenage Mutant Hero Turtles       | AUTHOR      |
+|        2714 | Trantor: The Last Stormtrooper    | AUTHOR      |
++-------------+-----------------------------------+-------------+
+```
+
+Note how there are two entries for the title *Pyjamarama*. This is because this game was released by two different software houses (Amsoft and Mikro-Gen), and each release has a separate filepath ID number.
+
+If an author has more than one role associated with a particular title, there will be one entry for each role. In the above example, there are two entries for the title *Savage*. This is because David Perry is listed as both an author and designer for this title.
 
 ##### `search_authors(VARCHAR(255) search_term)`
 
@@ -279,7 +435,7 @@ Note that the same author ID and name may appear more than once in the set of re
 
 ##### `search_filepaths(VARCHAR(260) search_term)`
 
-Select all the filepath ID numbers and filepaths that match the specified search term.
+Select all the filepath ID numbers and filepaths that match the specified search term, using standard SQL pattern matching syntax (i.e. `_` matches a single character, and `%` matches zero or more characters).
 
 For example, the following query selects all filepaths containing the term `ghost`:
 
@@ -303,7 +459,7 @@ CALL search_filepaths('%ghost%');
 
 ##### `search_titles(VARCHAR(255) search_term)`
 
-Select all the filepath ID numbers and titles that match the specified search term, and also specify if a title is an alias.
+Select all the filepath ID numbers and titles that match the specified search term, using standard SQL pattern matching syntax (i.e. `_` matches a single character, and `%` matches zero or more characters), and also specify if a title is an alias.
 
 For example, the following query selects all filepaths where the title contains the term `ghost`:
 
