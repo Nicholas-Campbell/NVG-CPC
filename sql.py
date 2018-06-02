@@ -7,9 +7,8 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-04-21
+# Last update: 2018-02-06
 
-import argparse
 import csv
 import datetime
 import ftplib
@@ -80,10 +79,7 @@ def _print_help():
 		+ 'locally\n'
 		+ indent + 'stored files.')
 	print('  -h, --host=name     Connect to host.')
-	print('  -p, --password=name Password to use when connecting to host. If '
-		+ 'no password\n'
-		+ indent + 'is specified then the program will ask for the user to\n'
-		+ indent + 'input it.')
+	print('  -p, --password=name Password to use when connecting to host.')
 	print('  -s, --silent        Be more silent. Don\'t print any information '
 		+ 'about what\n'
 		+ indent + 'changes were made to the database.')
