@@ -7,7 +7,7 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-02-06
+# Last update: 2018-07-22
 
 import csv
 import datetime
@@ -15,6 +15,7 @@ import ftplib
 import getopt
 import getpass
 import nvg.csv
+import nvg.database
 import os
 import pymysql as sql
 import re
@@ -40,11 +41,6 @@ author_set_def = ','.join([repr(type) for type in author_field_list])
 # Permitted values for the MEMORY REQUIRED field in the main CSV file
 memory_required_valid_values = [64, 128, 256]
 
-# Database filenames
-db_trigger_source_file = 'create_triggers.sql'
-db_stored_routine_source_file = 'create_stored_routines.sql'
-db_view_source_file = 'create_views.sql'
-
 # Get the list of IETF language codes in alphabetical order and store
 # them in a comma-delimited string for use in defining the main table later
 # on
@@ -62,8 +58,6 @@ language_set_def = ','.join([repr(code) for code in language_codes_list])
 del language_codes_list
 
 
-# Display a help message
-
 def _print_help():
 	"""Display the help message associated with this program.
 """
@@ -73,8 +67,7 @@ def _print_help():
 	print('  -?, --help          Display this help message and exit.')
 	print('  --build             Rebuild the entire database.')
 	print('  -D, --database=name Database to use.')
-	print('  --ftp-download      Download CSV files from the NVG FTP '
-		+ 'site\n'
+	print('  --ftp-download      Download CSV files from the NVG FTP site\n'
 		+ indent + '(ftp://ftp.nvg.ntnu.no/pub/cpc/) instead of using '
 		+ 'locally\n'
 		+ indent + 'stored files.')
@@ -94,10 +87,11 @@ def download_file_from_ftp_host(ftp_host, dir, filepath, file_transfer_mode):
 
 Parameters:
 ftp_host: An ftplib.FTP object representing a connection to an FTP site. A
-    connection must be established and the user must be logged on.
-dir: The directory to download the specified files to.
+    connection must already be established and the user must be logged on.
+dir: The directory to download the specified file to.
 filepath: The path of the file to download from the FTP site.
-mode: The file transfer mode to use ('a' = ASCII, 'b' or 'i' = image (binary)).
+file_transfer_mode: The file transfer mode to use ('a' = ASCII, 'b' or 'i' =
+    image (binary)).
 
 Returns:
 Nothing.
@@ -108,7 +102,7 @@ Nothing.
 	if file_transfer_mode not in ['a', 'b', 'i']:
 		raise ValueError
 
-	# Check that the directory to download to exists; if it doesn't,
+	# Check that the directory to download to exists; if it doesn't, then
 	# create the directories
 	(file_dir, filename) = os.path.split(filepath)
 	download_dir = os.path.join(dir, file_dir).replace('\\','/')
@@ -128,205 +122,13 @@ Nothing.
 	file_handle.close()
 
 
-# Set up the database and create tables, triggers, procedures, functions and
-# views
-
-def _setup_db(db_name):
-	# Convert backticks in arguments to double backticks so they can be used
-	# in queries
-	db_name_escaped = db_name.replace('`', '``')
-
-	# Delete the database if it exists, and suppress any warning messages that
-	# are displayed (e.g. the database doesn't exist)
-	#
-	# To set up the database, the following privileges need to be granted to
-	# the relevant user:
-	# CREATE, DROP, REFERENCES, ALTER ROUTINE, CREATE ROUTINE, TRIGGER, INSERT
-
-	cursor = connection.cursor()
-	try:
-		warnings.simplefilter('ignore')
-
-		# The queries below cannot be parameterised
-		cursor.execute('DROP DATABASE IF EXISTS `{0}`'.format(db_name_escaped))
-		cursor.execute('CREATE DATABASE `{0}`'.format(db_name_escaped))
-		cursor.execute('USE `{0}`'.format(db_name_escaped))
-		print('Using database {0}.'.format(db_name))
-		warnings.simplefilter('default')
-	except sql.OperationalError as db_error:
-		print(('Unable to set up database {0} on host {1}. Please check with '
-			+ 'your database administrator that you have the appropriate '
-			+ 'privileges to create, drop and set up databases.').format(
-			db_name, db_hostname))
-		connection.close()
-		quit()
-
-	# Create tables
-	try:
-		cursor = connection.cursor()
-		connection.begin()
-		table_name = 'nvg_type_ids'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(type_id TINYINT UNSIGNED AUTO_INCREMENT,\n'
-		'type_desc VARCHAR(255) NOT NULL,\n'
-		'PRIMARY KEY (type_id)'
-		')')
-		cursor.execute(query)
-
-		table_name = 'nvg_publication_type_ids'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(type_id TINYINT UNSIGNED AUTO_INCREMENT,\n'
-		'type_desc VARCHAR(255) NOT NULL,\n'
-		'PRIMARY KEY (type_id)'
-		')')
-		cursor.execute(query)
-
-		table_name = 'nvg_language_codes'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(language_code VARCHAR(5) NOT NULL,\n'
-		'language_desc VARCHAR(30) NOT NULL,\n'
-		'PRIMARY KEY (language_code)'
-		')')
-		cursor.execute(query)
-
-		table_name = 'nvg'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(filepath_id INT UNSIGNED AUTO_INCREMENT,\n'
-		'filepath VARCHAR(260) CHARACTER SET ascii NOT NULL,\n'
-		'file_size INT UNSIGNED NOT NULL,\n'
-		'cpcsofts_id SMALLINT UNSIGNED,\n'
-		'title VARCHAR(255),\n'
-		'company VARCHAR(255),\n'
-		'year DATE,\n'
-		'language SET(' + language_set_def + '),\n'
-		'type_id TINYINT UNSIGNED,\n'
-		'subtype VARCHAR(255),\n'
-		'title_screen VARCHAR(50),\n'
-		'cheat_mode VARCHAR(50),\n'
-		'protected VARCHAR(50),\n'
-		'problems VARCHAR(255),\n'
-		'upload_date DATE,\n'
-		'uploader VARCHAR(255),\n'
-		"comments VARCHAR(1000) DEFAULT '',\n"
-		'original_title VARCHAR(255),\n'
-		'publication_type_id TINYINT UNSIGNED,\n'
-		'publisher_code VARCHAR(16),\n'
-		'barcode VARCHAR(13),\n'
-		'dl_code VARCHAR(26),\n'
-		'memory_required SMALLINT UNSIGNED,\n'
-		'protection VARCHAR(255),\n'
-		'run_command VARCHAR(1000),\n'
-		'PRIMARY KEY (filepath_id),\n'
-		'UNIQUE INDEX (filepath),\n'
-		'CONSTRAINT FOREIGN KEY fk_type_id (type_id) REFERENCES nvg_type_ids (type_id),\n'
-		'CONSTRAINT FOREIGN KEY fk_publication_type_id (publication_type_id) REFERENCES nvg_publication_type_ids (type_id)\n'
-		')')
-		cursor.execute(query)
-
-		table_name = 'nvg_title_aliases'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(filepath_id INT UNSIGNED,\n'
-		'title VARCHAR(255),\n'
-		'PRIMARY KEY (filepath_id, title),\n'
-		'CONSTRAINT FOREIGN KEY fk_filepath_id (filepath_id) REFERENCES nvg (filepath_id)\n'
-		')')
-		cursor.execute(query)
-
-		table_name = 'nvg_author_ids'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(author_id SMALLINT UNSIGNED AUTO_INCREMENT,\n'
-		'author_name VARCHAR(255) NOT NULL,\n'
-		'alias_of_author_id SMALLINT UNSIGNED,\n'
-		'PRIMARY KEY (author_id),\n'
-		'CONSTRAINT FOREIGN KEY fk_alias_of_author (alias_of_author_id) REFERENCES nvg_author_ids (author_id)\n'
-		')')
-		cursor.execute(query)
-
-		table_name = 'nvg_file_authors'
-		print('Creating table ' + table_name + '...')
-		query = ('CREATE TABLE ' + table_name + '\n'
-		'(filepath_id INT UNSIGNED,\n'
-		'author_id SMALLINT UNSIGNED,\n'
-		'author_type ENUM (' + author_set_def + '),\n'
-		'author_index SMALLINT UNSIGNED,\n'
-		'PRIMARY KEY (filepath_id, author_id, author_type),\n'
-		'UNIQUE INDEX (filepath_id, author_type, author_index),\n'
-		'CONSTRAINT FOREIGN KEY fk_fa_filepath_id (filepath_id) REFERENCES nvg (filepath_id),\n'
-		'CONSTRAINT FOREIGN KEY fk_fa_author_id (author_id) REFERENCES nvg_author_ids (author_id)'
-		')')
-		cursor.execute(query)
-		connection.commit()
-	except sql.OperationalError as db_error:
-		print(('Unable to create table {0}. The following error was '
-			+ 'encountered:').format(table_name))
-		print('Error code: ' + str(db_error.args[0]))
-		print('Error message: ' + db_error.args[1])
-		connection.close()
-		quit()
-
-	# Set up the triggers, stored procedures, functions and views by running
-	# MySQL directly and processing the SQL files
-	db_command_base = ('mysql -h {0} -D {1} -u {2} --password={3}').format(
-		db_hostname, db_name, db_username, db_password)
-
-	# Triggers
-	print('Reading triggers from source file {0}...'.format(
-		db_trigger_source_file))
-	db_command = (db_command_base + ' < {0}').format(db_trigger_source_file)
-	if os.system(db_command) != 0:
-		print(('Unable to create triggers for database {0} on host {1}. '
-			+ 'Please check that the PATH environment variable is set '
-			+ 'correctly, or check with your database administrator that you '
-			+ 'have the appropriate privileges to create and alter '
-			+ 'triggers.').format(db_name, db_hostname))
-		connection.close()
-		quit()
-
-	# Stored procedures and functions
-	print(('Reading stored procedures and functions from source file '
-		+ '{0}...').format(db_stored_routine_source_file))
-	db_command = (db_command_base + ' < {0}').format(
-		db_stored_routine_source_file)
-	if os.system(db_command) != 0:
-		print(('Unable to create stored procedures and functions for database '
-			+ '{0} on host {1}. Please check that the PATH environment '
-			+ 'variable is set correctly, or check with your database '
-			+ 'administrator that you have the appropriate privileges to '
-			+ 'create and alter stored procedures and functions.').format(
-			db_name, db_hostname))
-		connection.close()
-		quit()
-
-	# Views
-	print(('Reading views from source file {0}...').format(db_view_source_file))
-	db_command = (db_command_base + ' < {0}').format(db_view_source_file)
-	if os.system(db_command) != 0:
-		print(('Unable to create views for database {0} '
-			+ 'on host {1}. Please check that the PATH environment variable '
-			+ 'is set correctly, or check with your database administrator '
-			+ 'that you have the appropriate privileges to create and alter '
-			+ 'views.').format(db_name, db_hostname))
-		connection.close()
-		quit()
-
-
-# Read the CSV file containing the list of author aliases
-#
-# Each line in this file consists of two columns; the first contains the
-# alias, and the second contains the author's actual name. These are added to
-# a dictionary
-
 def read_author_aliases_csv_file(csv_filename):
 	"""Read a CSV file containing a list of author names and aliases associated with
 them.
 
-The CSV file is assumed to be encoded in Latin-1 (ISO-8859-1).
+Each line of the CSV file consists of two columns; the first contains the
+alias, and the second contains the author's actual name. The file is assumed
+to be encoded in Latin-1 (ISO-8859-1).
 
 Parameters:
 csv_filename: The filepath of the CSV file.
@@ -404,7 +206,7 @@ Returns:
 A dictionary containing key-value pairs obtained from the specified table and
 columns.
 """
-	cursor = connection.cursor()
+	cursor = db.connection.cursor()
 	dict = {}
 
 	# Convert backticks in arguments to double backticks so they can be used
@@ -413,6 +215,9 @@ columns.
 	key_column = key_column.replace('`', '``')
 	value_column = value_column.replace('`', '``')
 
+	db_name_escaped = db_name.replace('`', '``')
+	query = 'USE `{0}`'.format(db_name_escaped)
+	cursor.execute(query)
 	query = 'SELECT `{0}`, `{1}` FROM `{2}`'.format(key_column, value_column,
 		table)
 	rows = cursor.execute(query)
@@ -424,10 +229,11 @@ columns.
 	cursor.close()
 	return(dict)
 
+
 # Retrieve all the existing author information from the database
 
 def get_existing_author_ids():
-	cursor = connection.cursor()
+	cursor = db.connection.cursor()
 	author_ids_dict = {}
 
 	query = ('SELECT author_name, author_id, alias_of_author_id FROM '
@@ -450,17 +256,10 @@ def get_existing_author_ids():
 def get_existing_filepath_ids():
 	return build_dict_from_table('nvg', 'filepath', 'filepath_id')
 
-# Retrieve all the existing publication types and their ID numbers from the
-# database
-
-def get_existing_publication_type_ids():
-	return build_dict_from_table('nvg_publication_type_ids', 'type_desc',
-		'type_id')
-
 # Retrieve all the existing filepath author information from the database
 
 def get_existing_filepath_id_author_info():
-	cursor = connection.cursor()
+	cursor = db.connection.cursor()
 	filepath_author_info = {}
 
 	query = ('SELECT filepath_id, author_id, author_type, author_index '
@@ -484,12 +283,6 @@ def get_existing_filepath_id_author_info():
 
 	cursor.close()
 	return filepath_author_info
-
-# Retrieve all the existing filepath types and their ID numbers from the
-# database
-
-def get_existing_type_ids():
-	return build_dict_from_table('nvg_type_ids', 'type_desc', 'type_id')
 
 
 # Create a list of author names and aliases to add to the database, by
@@ -527,7 +320,7 @@ def _get_authors_to_add():
 # Retrieve all the existing title aliases from the database
 
 def get_existing_title_aliases():
-	cursor = connection.cursor()
+	cursor = db.connection.cursor()
 	title_aliases_info = {}
 
 	query = ('SELECT filepath_id, title '
@@ -550,103 +343,6 @@ def get_existing_title_aliases():
 	cursor.close()
 	return title_aliases_info
 
-
-def insert_language_codes(language_codes_dict):
-	"""Insert a dictionary of IETF language tags and their descriptions into the table
-of language codes on the database.
-
-Parameters:
-language_codes_dict: A dictionary containing IETF language tags as the keys
-(e.g. 'en', 'en-US', 'es', 'fr') and the descriptions of the languages as their
-values (e.g. 'English', 'English (American)', 'Spanish', 'French').
-
-Returns:
-Nothing.
-"""
-	cursor = connection.cursor()
-	query = 'INSERT INTO nvg_language_codes VALUES (%s, %s)'
-	connection.begin()
-	for (language, code) in sorted(language_codes_dict.items()):
-		cursor.execute(query, (code, language))
-	connection.commit()
-	cursor.close()
-
-
-def insert_publication_type_ids(publication_type_ids_dict):
-	"""Insert a dictionary of publication types and their ID numbers into the table of
-publication types on the database.
-
-Parameters:
-publication_type_ids_dict: A dictionary containing publication types as the
-keys, and their corresponding ID numbers as the values (e.g. 'Commercial': 1,
-'Crack': 2, 'Freeware': 3).
-
-Returns:
-Nothing.
-"""
-	query = 'INSERT INTO nvg_publication_type_ids VALUES (%s, %s)'
-	cursor = connection.cursor()
-	connection.begin()
-	for type in sorted(publication_type_ids_dict):
-		cursor.execute(query, (publication_type_ids_dict[type], type))
-	connection.commit()
-	cursor.close()
-
-
-def insert_type_ids(type_ids_dict):
-	"""Insert a dictionary of filepath types and their ID numbers into the table of
-filepath types on the database.
-
-Parameters:
-type_ids_dict: A dictionary containing filepath types as the keys, and their
-corresponding ID numbers as the values (e.g. 'Arcade game': 1, 'Board game': 2,
-'Cartridge game': 3).
-
-Returns:
-Nothing.
-"""
-	query = 'INSERT INTO nvg_type_ids VALUES (%s, %s)'
-	cursor = connection.cursor()
-	connection.begin()
-	for type in sorted(type_ids_dict):
-		cursor.execute(query, (type_ids_dict[type], type))
-	connection.commit()
-	cursor.close()
-
-
-def insert_authors(authors_to_add):
-	"""Insert a list of authors into the table of author names on the database. ID
-numbers are assigned by the database and the names are added to the database in
-alphabetical order.
-
-Parameters:
-authors_to_add: A list containing the names of the authors to add.
-
-Returns:
-author_ids_dict: A dictionary containing the author names that were added as
-the keys, and their ID numbers as the values.
-"""
-	author_ids_dict = {}
-	cursor = connection.cursor()
-	connection.begin()
-	for author_name in sorted(authors_to_add, key=str.lower):
-		# Insert the new author name into the table of authors
-		query = ('INSERT INTO nvg_author_ids'
-			+ ' (author_name, alias_of_author_id) VALUES (%s, NULL)')
-		cursor.execute(query, (author_name.strip()))
-
-		# Get the ID number of the new author
-		query = 'SELECT LAST_INSERT_ID()'
-		cursor.execute(query)
-		author_id = cursor.fetchone()[0]
-
-		# Add the author name and his/her ID number to the local dictionary
-		# of author information
-		author_ids_dict[author_name] = {}
-		author_ids_dict[author_name]['ID'] = author_id
-
-	connection.commit()
-	return author_ids_dict
 
 def _delete_filepaths_from_db():
 	# Search the list of filepaths in the main CSV file that aren't already in
@@ -677,12 +373,12 @@ def _delete_filepaths_from_db():
 		# for SQL injection, but the list of filepath ID numbers should consist
 		# entirely of integers so there shouldn't be a problem?
 		try:
-			connection.begin()
+			db.connection.begin()
 			for table_name in ['nvg_file_authors', 'nvg_title_aliases', 'nvg']:
 				query = ('DELETE FROM {0} WHERE filepath_id IN ({1})'.format(
 					table_name, filepath_ids_to_delete_set))
 				cursor.execute(query)
-				connection.commit()
+				db.connection.commit()
 
 			# Display the list of filepaths that were deleted
 			for (filepath, filepath_id) in filepaths_to_delete:
@@ -697,17 +393,13 @@ def _delete_filepaths_from_db():
 				+ 'was encountered:').format(table_name))
 			print('Error code: ' + str(db_error.args[0]))
 			print('Error message: ' + db_error.args[1])
-			connection.close()
+			db.disconnect()
 			quit()
 
 
 # ------------
 # Main program
 # ------------
-
-# Parse command line arguments
-#
-# The allowed options are intentionally similar to those used by MySQL
 
 db_hostname = 'localhost'
 db_name = 'cpc'
@@ -721,7 +413,12 @@ silent_output = False			# Silent output mode
 ftp_hostname = 'ftp.nvg.ntnu.no'
 ftp_nvg_csv_filepath = 'pub/cpc/00_table.csv'
 ftp_cpcpower_csv_filepath = 'pub/cpc/cpcpower.csv'
-download_files_from_ftp_host = False
+download_files_from_ftp_host_flag = False
+
+
+# Parse command line arguments
+#
+# The allowed options are intentionally similar to those used by MySQL
 
 try:
 	optlist, args = getopt.getopt(sys.argv[1:], '?D:h:u:p:s',
@@ -754,7 +451,7 @@ try:
 			elif option == '--build':
 				build_db_flag = True
 			elif option == '--ftp-download':
-				download_files_from_ftp_host = True
+				download_files_from_ftp_host_flag = True
 
 		# Check if more than one database has been specified (i.e. by using
 		# -D or --database, as well as specifying the name of the database as
@@ -778,12 +475,13 @@ if db_password == None:
 # Read and process the CSV files
 # ------------------------------
 
-file_data = {}
-cpcpower_data = {}
+file_data = {}		# Dictionary for storing information about files on NVG
+cpcpower_data = {}	# Dictionary for storing CPCSOFTS ID numbers of files on
+					# NVG
 
 # If the FTP download option has been selected, then download the relevant
 # files from the NVG FTP site
-if download_files_from_ftp_host:
+if download_files_from_ftp_host_flag:
 	# Connect and log on to the FTP host
 	try:
 		print('Connecting to {0}...'.format(ftp_hostname))
@@ -813,7 +511,7 @@ if download_files_from_ftp_host:
 			print('Downloading {0} from {1}...'.format(file_to_download,
 				ftp_hostname))
 			download_file_from_ftp_host(ftp, temp_dir.name,
-				file_to_download, 'b')
+				file_to_download, 'a')
 		except ftplib.error_perm as ftp_error:
 			print(('Unable to download {0} from {1}. The following error '
 				+ 'occurred:').format(file_to_download, ftp_hostname),
@@ -825,7 +523,7 @@ if download_files_from_ftp_host:
 
 # Read the main CSV file
 try:
-	if download_files_from_ftp_host:
+	if download_files_from_ftp_host_flag:
 		nvg_csv_filename = os.path.join(temp_dir.name,
 			ftp_nvg_csv_filepath).replace('\\','/')
 	print('Reading {0}...'.format(nvg_csv_filename))
@@ -833,7 +531,7 @@ try:
 # If the main CSV file is missing, then print an error message and quit
 except FileNotFoundError:
 	print('Unable to read {0}.'.format(nvg_csv_filename))
-	if download_files_from_ftp_host:
+	if download_files_from_ftp_host_flag:
 		temp_dir.cleanup()
 	quit()
 
@@ -846,24 +544,22 @@ author_aliases_dict = read_author_aliases_csv_file(
 # Read the CSV file containing the list of CPCSOFTS ID numbers associated with
 # files on NVG
 try:
-	if download_files_from_ftp_host:
+	if download_files_from_ftp_host_flag:
 		cpcpower_csv_filename = os.path.join(temp_dir.name,
 			ftp_cpcpower_csv_filepath).replace('\\','/')
 	print('Reading list of CPCSOFTS ID numbers in {0}...'.format(
 		cpcpower_csv_filename))
 	cpcpower_data = nvg.csv.read_cpcpower_csv_file(cpcpower_csv_filename)
-
-# If the main CSV file is missing, then print an error message and quit
+# If the CSV file is missing, then print an error message; however, the
+# database can still be maintained without it
 except FileNotFoundError:
 	print(('Unable to read {0}. CPCSOFTS ID numbers will not be added or '
 		+ 'updated.').format(cpcpower_csv_filename))
-	if download_files_from_ftp_host:
-		temp_dir.cleanup()
-
 # If a temporary directory was created earlier, delete the directory and
 # its contents
-if download_files_from_ftp_host:
-	temp_dir.cleanup()
+finally:
+	if download_files_from_ftp_host_flag:
+		temp_dir.cleanup()
 
 # Some file types are incorrectly formatted, so they need to be corrected
 type_correction_dict = {'Games compilation': 'Compilation',
@@ -879,62 +575,70 @@ for filepath in file_data:
 			pass
 del type_correction_dict
 
-# Create dictionaries containing ID numbers of file types (e.g. Arcade game,
-# Compilation, Utility) and publication types (e.g. Commercial, Freeware,
-# Type-in)
+# Check if any of the filepaths in the main CSV file are not included in
+# the CPC-POWER CSV file
+if cpcpower_data:
+	for filepath in file_data:
+		if filepath not in cpcpower_data:
+			print(('{0} is listed in {1} but is not listed in '
+				+ '{2}.').format(filepath, nvg_csv_filename,
+				cpcpower_csv_filename), file=sys.stderr)
 
-type_ids_dict = create_id_dict(['TYPE'])
-publication_type_ids_dict = create_id_dict(['PUBLICATION'])
+	# Now check if any of the ZIP files listed in the CPC-POWER CSV file
+	# are not included in the main CSV file
+	for filepath in cpcpower_data:
+		if filepath[-4:].lower() == '.zip':
+			if filepath not in file_data:
+				print(('{0} is listed in {1} but is not listed in '
+					+ '{2}.').format(filepath, cpcpower_csv_filename,
+					nvg_csv_filename), file=sys.stderr)
 
 
 # -----------------------------
 # Connect to the MySQL database
 # -----------------------------
 
-connection = None
+db = None
 try:
 	print()
 	print('Connecting to host {0}...'.format(db_hostname))
-	connection = sql.connect(host = db_hostname, user = db_username,
-		password = db_password, charset = 'utf8')
-except sql.OperationalError as db_error:
+	db = nvg.database.Database(db_hostname, db_name, db_username, db_password)
+	db.connect(use_database=False)
+except (sql.OperationalError, sql.InternalError) as db_error:
 	print(('Unable to connect to database host {0} using username {1}. Please '
 		+ 'check that you have specified the correct host name, user name '
 		+ 'and/or password.').format(db_hostname, db_username),
 		file=sys.stderr)
 	quit()
 
-cursor = connection.cursor()
-
-
 # ---------------------------------------
 # Create tables for storing data from NVG
 # ---------------------------------------
 
-# If the build flag is not set, try to select the specified database; if it
-# doesn't exist, then set the build flag so that it will be built
+# If the build flag is not set, check that the specified database exists on
+# the server; if it doesn't exist, then set the build flag so that it will be
+# built
 if build_db_flag == False:
-	try:
-		query = 'USE `{0}`'.format(db_name.replace('`', '``'))
-		cursor = connection.cursor()
-		cursor.execute(query)
-	except sql.InternalError as db_error:
+	query = 'SHOW DATABASES LIKE %s'
+	cursor = db.connection.cursor()
+
+	cursor.execute(query, (db_name))
+	row = cursor.fetchone()
+	if row == None:
 		print(('Database {0} does not exist on host {1}, so it will be '
 			+ 'built.').format(db_name, db_hostname), file=sys.stderr)
-		# If an InternalError is raised, it should mean that the database
-		# doesn't exist, so it will need to be built
 		build_db_flag = True
 
-# If the build flag is set, then set up all the tables, procedures, functions
-# and views
+# If the build flag is set, then set up all the tables, triggers, functions,
+# procedures and views
 if build_db_flag == True:
-	_setup_db(db_name)
+	db.build()
 
 	# Create dictionaries containing ID numbers of file types (e.g. Arcade
 	# game, Compilation, Utility) and publication types (e.g. Commercial,
 	# Freeware, Type-in)
-	create_id_dict(type_ids_dict, ['TYPE'])
-	create_id_dict(publication_type_ids_dict, ['PUBLICATION'])
+	type_ids_dict = create_id_dict(['TYPE'])
+	publication_type_ids_dict = create_id_dict(['PUBLICATION'])
 
 # If the build flag is not set, then get the existing data from the database
 # and create lists of filepaths that need to be removed and added
@@ -942,8 +646,8 @@ else:
 	try:
 		# Retrieve ID numbers of data that is already on the database
 		existing_filepath_ids = get_existing_filepath_ids()
-		publication_type_ids_dict = get_existing_publication_type_ids()
-		type_ids_dict = get_existing_type_ids()
+		publication_type_ids_dict = db.get_publication_types()
+		type_ids_dict = db.get_file_types()
 		existing_title_aliases_dict = get_existing_title_aliases()
 
 		# Retrieve filepath author information
@@ -954,6 +658,8 @@ else:
 			'error was encountered:').format(db_name), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
+		db.disconnect()
+		quit()
 
 	# Iterate the list of filepaths that are already on the database, and add
 	# their ID numbers to the dictionary of filepaths in the main CSV file
@@ -967,68 +673,90 @@ if build_db_flag == True:
 	author_ids_dict = {}
 else:
 	try:
-		author_ids_dict = get_existing_author_ids()
+		author_ids_dict = db.get_authors()
 	except sql.OperationalError as db_error:
 		print(('Unable to retrieve list of author ID numbers from database '
 			+ '{0}. The following error was encountered:').format(db_name),
 			file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
-		connection.close()
+		db.disconnect()
 		quit()
 
 # Get a list of author names that need to be added to the database
 authors_to_add = _get_authors_to_add()
-
 
 # -------------------------
 # Populate tables with data
 # -------------------------
 
 # If the build flag is set, insert data into the tables containing the type ID
-# numbers, publication type ID numbers and language codes; if the build flag is
-# not set, assume that all of the data has already been added to the database
+# numbers, publication type ID numbers and language codes; if the build flag
+# is not set, assume that all of the data has already been added to the
+# database
 message_insert_rows = 'Inserting rows into table {0}...'
 
 if build_db_flag == True:
 	try:
+		db.connection.begin()
+
 		# List of file types (nvg_type_ids)
-		table_name = 'nvg_type_ids'
-		print(message_insert_rows.format(table_name))
-		insert_type_ids(type_ids_dict)
+		if silent_output == False:
+			print(message_insert_rows.format(nvg.database.file_type_ids_table))
+		for type_desc, type_id in sorted(type_ids_dict.items(),
+			key=lambda x: x[1]):
+			db.insert_file_type(type_desc, type_id, commit=False)
 
 		# List of publication types (nvg_publication_type_ids)
-		table_name = 'nvg_publication_type_ids'
-		print(message_insert_rows.format(table_name))
-		insert_publication_type_ids(publication_type_ids_dict)
+		if silent_output == False:
+			print(message_insert_rows.format(
+				nvg.database.publication_type_ids_table))
+		for type_desc, type_id in sorted(publication_type_ids_dict.items(),
+			key=lambda x: x[1]):
+			db.insert_publication_type(type_desc, type_id, commit=False)
 
 		# List of language codes
-		table_name = 'nvg_language_codes'
-		print(message_insert_rows.format(table_name))
-		insert_language_codes(language_codes_dict)
+		if silent_output == False:
+			print(message_insert_rows.format(
+				nvg.database.language_codes_table))
+		for language, code in sorted(language_codes_dict.items(),
+			key=lambda x: x[1]):
+			db.insert_language(language, code, commit=False)
 
+		db.connection.commit()
 	except sql.OperationalError as db_error:
 		print(('Unable to insert rows into table {0}. The following error was '
 			+ 'encountered:').format(table_name), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
-		connection.close()
+		db.disconnect()
 		quit()
 
 # Add new authors and aliases to the database and get the ID numbers that are
 # assigned to them after they are added
 if authors_to_add:
 	print('Assigning ID numbers to new authors...')
-	table_name = 'nvg_author_ids'
+	authors_added = {}
+
 	try:
-		authors_added = insert_authors(authors_to_add)
+		db.connection.begin()
+
+		# Sort the list of author names alphabetically
+		for author in sorted(authors_to_add, key=str.lower):
+			# Don't add any alias ID number cross-references yet; do this
+			# later when all the new author ID numbers have been assigned
+			author_id = db.insert_author(author, None, None, commit=False)
+			authors_added[author] = {}
+			authors_added[author]['ID'] = author_id
+
+		db.connection.commit()
 	except sql.OperationalError as db_error:
 		print(('Unable to insert authors into table {0}. The '
 			+ 'following error was encountered:').format(table_name),
 			file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
-		connection.close()
+		db.disconnect()
 		quit()
 
 	# Update the dictionary of author IDs with the author names and IDs that
@@ -1043,9 +771,9 @@ if authors_to_add:
 			print('Added author {0} (ID {1}).'.format(name,
 				authors_added[name]['ID']))
 
-
 # Update the alias ID numbers associated with authors, but only if the
-# author aliases CSV file is available
+# author aliases CSV file is available (i.e. the dictionary of author aliases
+# contains entries)
 
 # Create a dictionary of author names to update, with the values being the
 # previous alias ID number associated with the author name
@@ -1061,11 +789,12 @@ if author_aliases_dict:
 
 		# If an author is not in the list of author aliases, and the author
 		# name is an alias of another name (i.e. there is an alias ID number
-		# assigned), delete the alias ID and add the author name to the list
-		# of authors to update
-		if (author_name not in author_aliases_dict and
+		# already assigned to it), delete the alias ID and add the author name
+		# to the list of authors to update
+		if ((author_name not in author_aliases_dict) and
 			current_alias_of_author_id):
 			author_aliases_to_update[author_name] = current_alias_of_author_id
+			new_alias_of_author_id = None
 			del author_ids_dict[author_name]['Alias ID']
 
 		# If an author is in the list of author aliases, and there is no alias
@@ -1077,24 +806,23 @@ if author_aliases_dict:
 				author_ids_dict[author_aliases_dict[author_name]]['ID']
 			if ('Alias ID' not in author_ids_dict[author_name] or
 				new_alias_of_author_id != current_alias_of_author_id):
-				author_aliases_to_update[author_name] = current_alias_of_author_id
-				author_ids_dict[author_name]['Alias ID'] = new_alias_of_author_id
+				author_aliases_to_update[author_name] = \
+					current_alias_of_author_id
+				author_ids_dict[author_name]['Alias ID'] = \
+					new_alias_of_author_id
 
 	# Update the database with the new author alias information
-	table_name = 'nvg_author_ids'
 	print('Updating author aliases...')
-	query_base = 'UPDATE {0} SET alias_of_author_id = '.format(table_name)
 	message_list = []
 
 	try:
-		connection.begin()
+		db.connection.begin()
 		for author_name in sorted(author_aliases_to_update, key=str.lower):
-			query = query_base
 			params = []
+			new_alias_of_author_id = None
 
 			# The author to update no longer has an alias
 			if 'Alias ID' not in author_ids_dict[author_name]:
-				query += 'NULL'
 				prev_alias_of_author_id = author_aliases_to_update[author_name]
 				for author_name2 in author_ids_dict:
 					if (author_ids_dict[author_name2]['ID'] ==
@@ -1106,32 +834,30 @@ if author_aliases_dict:
 
 			# The author to update has a new alias
 			else:
-				query += '%s'
-				params.append(author_ids_dict[author_name]['Alias ID'])
+				new_alias_of_author_id = \
+					author_ids_dict[author_name]['Alias ID']
 				message_list.append(('Added {0} (ID {1}) as an alias of {2} '
 					+ '(ID {3}).').format(author_name,
-					str(author_ids_dict[author_name]['ID']),
+					author_ids_dict[author_name]['ID'],
 					author_aliases_dict[author_name],
-					str(author_ids_dict[author_aliases_dict[author_name]]['ID'])))
-
-			query += ' WHERE author_id = %s'
-			params.append(author_ids_dict[author_name]['ID'])
+					author_ids_dict[author_aliases_dict[author_name]]['ID']))
 
 			# Update the relevant row in the table of author names
 			try:
-				cursor.execute(query, params)
+				db.update_author(author_ids_dict[author_name]['ID'],
+					author_name, new_alias_of_author_id, commit=False)
 			except sql.OperationalError as db_error:
-				connection.rollback()
+				db.connection.rollback()
 				print(('Unable to update author name {0} in table {1}. The '
 					+ 'following error was encountered:').format(author_name,
 					table_name), file=sys.stderr)
 				print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 				print('Error message: ' + db_error.args[1], file=sys.stderr)
-				connection.close()
+				db.disconnect()
 				quit()
 
 		# Commit all the updates to the table of author names
-		connection.commit()
+		db.connection.commit()
 
 		# Print a list of author aliases that were added and removed
 		if silent_output == False:
@@ -1143,7 +869,7 @@ if author_aliases_dict:
 			file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
-		connection.close()
+		db.disconnect()
 		quit()
 
 # ----------------------------------------------------------------------------
@@ -1168,10 +894,18 @@ for filepath in sorted(file_data):
 	except KeyError:
 		pass
 
+	# Convert the YEAR field to an integer
+	if 'YEAR' in file_data[filepath]:
+		try:
+			file_data[filepath]['YEAR'] = int(file_data[filepath]['YEAR'])
+		except ValueError:
+			del file_data[filepath]['YEAR']
+
 	# Convert the TYPE and PUBLICATION fields for each filepath to their
 	# corresponding ID numbers
 	try:
-		file_data[filepath]['TYPE'] = type_ids_dict[file_data[filepath]['TYPE']]
+		file_data[filepath]['TYPE'] = \
+			type_ids_dict[file_data[filepath]['TYPE']]
 	except KeyError:
 		pass
 
@@ -1241,21 +975,19 @@ for filepath in sorted(file_data):
 		del file_data[filepath]['Upload Date']
 		print(('Upload Date field in {0} (ID {1}) does not contain a valid '
 			+ 'date in the format dd/mm/yyyy, so it will be set to '
-			+ 'NULL.').format(filepath,
-			file_data[filepath]['ID']), file=sys.stderr)
+			+ 'NULL.').format(filepath, file_data[filepath]['ID']),
+			file=sys.stderr)
 
 	# Examine the Uploader and COMMENTS field; the string '?' is used to
 	# represent an unknown uploader, or no comments, so delete these values
 	# from the file data
 	for column in ['Uploader', 'COMMENTS']:
-		try:
-			if file_data[filepath][column] == '?':
-				del file_data[filepath][column]
-		except KeyError:
-			pass
+		if ((column in file_data[filepath]) and
+			(file_data[filepath][column] == '?')):
+			del file_data[filepath][column]
 
 	# Convert the MEMORY REQUIRED field to an integer
-	try:
+	if 'MEMORY REQUIRED' in file_data[filepath]:
 		match = re.fullmatch('^([0-9]+)K',
 			file_data[filepath]['MEMORY REQUIRED'])
 		valid_memory_required_value = False
@@ -1273,8 +1005,6 @@ for filepath in sorted(file_data):
 				+ 'valid value, so it will be set to NULL.').format(filepath,
 				file_data[filepath]['ID']), file=sys.stderr)
 			del file_data[filepath]['MEMORY REQUIRED']
-	except KeyError:
-		pass
 
 	# Convert names of authors to their corresponding ID numbers, by examining
 	# all the author-like fields (e.g. PUBLISHER, DEVELOPER, AUTHOR)
@@ -1305,14 +1035,10 @@ for filepath in sorted(file_data):
 
 table_name = 'nvg'
 message_list = []
-query_base = ('UPDATE ' + table_name
-	+ ' SET filepath = %s, file_size = %s, title = %s, company = %s, '
-	+ 'year = '
-	)
 update_message_displayed = False
 
 try:
-	connection.begin()
+	db.connection.begin()
 	for filepath in sorted(file_data):
 		# If a filepath needs to be updated, it will have an ID number
 		# assigned to it
@@ -1322,86 +1048,47 @@ try:
 				print('Updating filepaths in table {0}...'.format(table_name))
 				update_message_displayed = True
 
-			# Set the initial query string
-			query = query_base
-
-			# Set the year of release by converting it to an integer; if the
-			# conversion fails, set it to None (NULL in MySQL)
-			try:
-				year = int(file_data[filepath]['YEAR'])
-				query += "STR_TO_DATE(%s,'%%Y')"
-			except (KeyError, ValueError):
-				year = None
-				query += '%s'
-
-			# Convert the list of languages to a comma-separated string
-			try:
-				languages = ','.join(file_data[filepath]['LANGUAGE'])
-			except KeyError:
-				languages = None
-			query += ', language = %s, '
-
-			query += ('type_id = %s, subtype = %s, title_screen = %s, '
-				+ 'cheat_mode = %s, protected = %s, problems = %s, '
-				+ 'upload_date = ')
-
-			# Check if the upload date matches the format dd/mm/yyyy; if it
-			# does not, set it to None (NULL in MySQL)
-			try:
-				upload_date = file_data[filepath]['Upload Date']
-				if (re.fullmatch('[0-9]{2}/[0-9]{2}/\d{4}', upload_date)):
-					query += "STR_TO_DATE(%s,'%%d/%%m/%%Y')"
-				else:
-					raise ValueError
-			except (KeyError, ValueError):
-				upload_date = None
-				query += '%s'
-
-			query += (', uploader = %s, comments = %s, original_title = %s, '
-				+ 'publication_type_id = %s, publisher_code = %s, '
-				+ 'barcode = %s, dl_code = %s, memory_required = %s, '
-				+ 'protection = %s, run_command = %s'
-				)
-
-			query += ' WHERE filepath_id = %s'
+			if cpcpower_data:
+				cpcsofts_id = cpcpower_data.get(filepath)
+				if cpcsofts_id == 0:
+					cpcsofts_id = None
+			else:
+				cpcsofts_id = None
 
 			# Update the filepath
-			cursor.execute(query, (filepath,
-				file_data[filepath]['Size'],
-				file_data[filepath].get('TITLE', None),
-				file_data[filepath].get('COMPANY', None),
-				year, languages,
-				file_data[filepath].get('TYPE', None),
-				file_data[filepath].get('SUBTYPE', None),
-				file_data[filepath].get('TITLE SCREEN', None),
-				file_data[filepath].get('CHEAT MODE', None),
-				file_data[filepath].get('PROTECTED', None),
-				file_data[filepath].get('PROBLEMS', None),
-				upload_date,
-				file_data[filepath].get('Uploader', None),
-				file_data[filepath].get('COMMENTS', ''),
-				file_data[filepath].get('ORIGINAL TITLE', None),
-				file_data[filepath].get('PUBLICATION', None),
-				file_data[filepath].get('PUBLISHER CODE', None),
-				file_data[filepath].get('BARCODE', None),
-				file_data[filepath].get('DL CODE', None),
-				file_data[filepath].get('MEMORY REQUIRED', None),
-				file_data[filepath].get('PROTECTION', None),
-				file_data[filepath].get('RUN COMMAND', None),
-				str(file_data[filepath]['ID'])
-				))
+			db.update_filepath(file_data[filepath]['ID'],
+				file_size=file_data[filepath]['Size'],
+				cpcsofts_id=cpcsofts_id,
+				title=file_data[filepath].get('TITLE'),
+				company=file_data[filepath].get('COMPANY'),
+				year=file_data[filepath].get('YEAR'),
+				languages=file_data[filepath].get('LANGUAGE'),
+				type_id=file_data[filepath].get('TYPE'),
+				subtype=file_data[filepath].get('SUBTYPE'),
+				title_screen=file_data[filepath].get('TITLE SCREEN'),
+				cheat_mode=file_data[filepath].get('CHEAT MODE'),
+				protected=file_data[filepath].get('PROTECTED'),
+				problems=file_data[filepath].get('PROBLEMS'),
+				upload_date=file_data[filepath].get('Upload Date'),
+				uploader=file_data[filepath].get('Uploader'),
+				comments=file_data[filepath].get('COMMENTS'),
+				original_title=file_data[filepath].get('ORIGINAL TITLE'),
+				publication_type_id=file_data[filepath].get('PUBLICATION'),
+				publisher_code=file_data[filepath].get('PUBLISHER CODE'),
+				barcode=file_data[filepath].get('BARCODE'),
+				dl_code=file_data[filepath].get('DL CODE'),
+				memory_required=file_data[filepath].get('MEMORY REQUIRED'),
+				commit=False
+			)
 
-	connection.commit()
-	if silent_output == False:
-		if(message_list):
-			print('\n'.join(message_list))
+	db.connection.commit()
 
 except (sql.OperationalError, sql.InternalError) as db_error:
 	print(('Unable to updates rows in table {0}. The following error was '
 		+ 'encountered:').format(table_name), file=sys.stderr)
 	print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 	print('Error message: ' + db_error.args[1], file=sys.stderr)
-	connection.close()
+	db.disconnect()
 	quit()
 
 # If the build flag is not set, then delete filepaths from the database that
@@ -1410,16 +1097,12 @@ if build_db_flag == False:
 	_delete_filepaths_from_db()
 
 # Insert new filepaths into the database
-query_base = ('INSERT INTO ' + table_name + ' (filepath, file_size, '
-	+ 'title, company, year, language, type_id, subtype, title_screen, '
-	+ 'cheat_mode, protected, problems, upload_date, uploader, comments, '
-	+ 'original_title, publication_type_id, publisher_code, barcode, '
-	+ 'dl_code, memory_required, protection, run_command) '
-	+ 'VALUES (%s, %s, %s, %s, ')
+
+message_list = []
 insert_message_displayed = False
 
 try:
-	connection.begin()
+	db.connection.begin()
 	for filepath in sorted(file_data):
 		# If a filepath needs to be added to the database, it won't have an
 		# ID number assigned to it
@@ -1430,76 +1113,44 @@ try:
 					table_name))
 				insert_message_displayed = True
 
-			# Set the initial query string
-			query = query_base
-
-			# Set the year of release by converting it to an integer; if the
-			# conversion fails, set it to None (NULL in MySQL)
-			try:
-				year = int(file_data[filepath]['YEAR'])
-				query += "STR_TO_DATE(%s,'%%Y')"
-			except (KeyError, ValueError):
-				year = None
-				query += '%s'
-
-			# Convert the list of languages to a comma-separated string
-			try:
-				languages = ','.join(file_data[filepath]['LANGUAGE'])
-			except KeyError:
-				languages = None
-			query += ', %s, '
-
-			query += '%s, %s, %s, %s, %s, %s, '
-
-			# Check if the upload date matches the format dd/mm/yyyy; if it
-			# does not, set it to None (NULL in MySQL)
-			try:
-				upload_date = file_data[filepath]['Upload Date']
-				if (re.fullmatch('\d{2}/\d{2}/\d{4}', upload_date)):
-					query += "STR_TO_DATE(%s,'%%d/%%m/%%Y')"
-				else:
-					raise ValueError
-			except (KeyError, ValueError):
-				upload_date = None
-				query += '%s'
-
-			query += ', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)'
+			if cpcpower_data:
+				cpcsofts_id = cpcpower_data.get(filepath)
+				if cpcsofts_id == 0:
+					cpcsofts_id = None
+			else:
+				cpcsofts_id = None
 
 			# Insert the new filepath into the table
-			cursor.execute(query, (
+			filepath_id = db.insert_filepath(
 				filepath,
-				file_data[filepath]['Size'],
-				file_data[filepath].get('TITLE', None),
-				file_data[filepath].get('COMPANY', None),
-				year, languages,
-				file_data[filepath].get('TYPE', None),
-				file_data[filepath].get('SUBTYPE', None),
-				file_data[filepath].get('TITLE SCREEN', None),
-				file_data[filepath].get('CHEAT MODE', None),
-				file_data[filepath].get('PROTECTED', None),
-				file_data[filepath].get('PROBLEMS', None),
-				upload_date,
-				file_data[filepath].get('Uploader', None),
-				file_data[filepath].get('COMMENTS', ''),
-				file_data[filepath].get('ORIGINAL TITLE', None),
-				file_data[filepath].get('PUBLICATION', None),
-				file_data[filepath].get('PUBLISHER CODE', None),
-				file_data[filepath].get('BARCODE', None),
-				file_data[filepath].get('DL CODE', None),
-				file_data[filepath].get('MEMORY REQUIRED', None),
-				file_data[filepath].get('PROTECTION', None),
-				file_data[filepath].get('RUN COMMAND', None))
+				file_size=file_data[filepath]['Size'],
+				cpcsofts_id=cpcsofts_id,
+				title=file_data[filepath].get('TITLE'),
+				company=file_data[filepath].get('COMPANY'),
+				year=file_data[filepath].get('YEAR'),
+				languages=file_data[filepath].get('LANGUAGE'),
+				type_id=file_data[filepath].get('TYPE'),
+				subtype=file_data[filepath].get('SUBTYPE'),
+				title_screen=file_data[filepath].get('TITLE SCREEN'),
+				cheat_mode=file_data[filepath].get('CHEAT MODE'),
+				protected=file_data[filepath].get('PROTECTED'),
+				problems=file_data[filepath].get('PROBLEMS'),
+				upload_date=file_data[filepath].get('Upload Date'),
+				uploader=file_data[filepath].get('Uploader'),
+				comments=file_data[filepath].get('COMMENTS'),
+				original_title=file_data[filepath].get('ORIGINAL TITLE'),
+				publication_type_id=file_data[filepath].get('PUBLICATION'),
+				publisher_code=file_data[filepath].get('PUBLISHER CODE'),
+				barcode=file_data[filepath].get('BARCODE'),
+				dl_code=file_data[filepath].get('DL CODE'),
+				memory_required=file_data[filepath].get('MEMORY REQUIRED'),
+				commit=False
 			)
-
-			# Get the ID number of the new filepath
-			query = 'SELECT LAST_INSERT_ID()'
-			cursor.execute(query)
-			filepath_id = cursor.fetchone()[0]
 			file_data[filepath]['ID'] = filepath_id
 			message_list.append('Added {0} (ID {1}).'.format(filepath,
 				filepath_id))
 
-	connection.commit()
+	db.connection.commit()
 	if silent_output == False:
 		if(message_list):
 			print('\n'.join(message_list))
@@ -1509,7 +1160,7 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 		+ 'encountered:').format(table_name), file=sys.stderr)
 	print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 	print('Error message: ' + db_error.args[1], file=sys.stderr)
-	connection.close()
+	db.disconnect()
 	quit()
 
 # Insert author information, associating authors with filepaths
@@ -1521,7 +1172,7 @@ insert_query = ('INSERT INTO ' + table_name + ' (filepath_id, author_id, '
 message_list = []
 
 try:
-	connection.begin()
+	db.connection.begin()
 
 	# If the build flag is set, there is no need to check the existing
 	# author information in the database
@@ -1539,13 +1190,16 @@ try:
 				# in the main CSV file, then add it to the database
 				if field in file_data[filepath]:
 					for index in range(len(file_data[filepath][field])):
-						cursor.execute(insert_query, (filepath_id,
-							file_data[filepath][field][index], field, index))
+						db.insert_filepath_author(filepath_id,
+							file_data[filepath][field][index], field, index,
+							commit=False)
 					author_info_updated |= 1
 
 			if author_info_updated:
 				message_list.append(('Added author information for {0} (ID '
 					+ '{1}).').format(filepath, filepath_id))
+
+		db.connection.commit()
 		
 	# If the build flag is not set, then compare the existing author
 	# information for each filepath in the main CSV file with what is already
@@ -1598,11 +1252,13 @@ try:
 
 				# Issue DELETE and INSERT queries as necessary
 				if issue_delete_query:
-					cursor.execute(delete_query, (filepath_id, field))
+					db.delete_filepath_author(filepath_id,
+						author_type=field, commit=False)
 				if issue_insert_query:
 					for index in range(len(file_data[filepath][field])):
-						cursor.execute(insert_query, (filepath_id,
-							file_data[filepath][field][index], field, index))
+						db.insert_filepath_author(filepath_id,
+							file_data[filepath][field][index], field, index,
+							commit=False)
 
 			# If the author information on the database has been modified,
 			# display a message to state this
@@ -1620,7 +1276,7 @@ try:
 				message_list.append(message_base + (' author information '
 					+ 'for {0} (ID {1}).'.format(filepath, filepath_id)))
 
-	connection.commit()
+	db.connection.commit()
 	if silent_output == False:
 		if(message_list):
 			print('\n'.join(message_list))
@@ -1630,17 +1286,15 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 		+ 'encountered:').format(table_name), file=sys.stderr)
 	print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 	print('Error message: ' + db_error.args[1], file=sys.stderr)
-	connection.close()
+	db.disconnect()
 	quit()
 
 # Insert aliases of titles
 table_name = 'nvg_title_aliases'
-delete_query = ('DELETE FROM ' + table_name + ' WHERE filepath_id = %s')
-insert_query = ('INSERT INTO ' + table_name + ' VALUES (%s, %s)')
 message_list = []
 
 try:
-	connection.begin()
+	db.connection.begin()
 
 	# If the build flag is set, there is no need to check the existing title
 	# alias information in the database
@@ -1650,8 +1304,9 @@ try:
 			filepath_id = file_data[filepath]['ID']
 
 			if 'ALSO KNOWN AS' in file_data[filepath]:
-				for title in file_data[filepath]['ALSO KNOWN AS']:
-					cursor.execute(insert_query, (filepath_id, title))
+				for title_alias in file_data[filepath]['ALSO KNOWN AS']:
+					db.insert_title_alias(filepath_id, title_alias,
+						commit=False)
 				message_list.append(('Added title aliases for {0} '
 					+ '(ID {1}).').format(filepath, filepath_id))
 
@@ -1702,10 +1357,11 @@ try:
 
 			# Issue DELETE and INSERT queries as necessary
 			if issue_delete_query:
-				cursor.execute(delete_query, (filepath_id))
+				db.delete_title_aliases(filepath_id, commit=False)
 			if issue_insert_query:
 				for title_alias in file_data[filepath]['ALSO KNOWN AS']:
-					cursor.execute(insert_query, (filepath_id, title_alias))
+					db.insert_title_alias(filepath_id, title_alias,
+						commit=False)
 
 			# If the author information on the database has been modified,
 			# display a message to state this
@@ -1723,7 +1379,7 @@ try:
 				message_list.append(message_base + (' title alias information '
 					+ 'for {0} (ID {1}).'.format(filepath, filepath_id)))
 
-	connection.commit()
+	db.connection.commit()
 	if silent_output == False:
 		if(message_list):
 			print('\n'.join(message_list))
@@ -1733,44 +1389,8 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 		+ 'encountered:').format(table_name), file=sys.stderr)
 	print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 	print('Error message: ' + db_error.args[1], file=sys.stderr)
-	connection.close()
+	db.disconnect()
 	quit()
 
-# Insert CPCSOFTS ID numbers, if the CPC-POWER CSV file exists
-
-table_name = 'nvg'
-
-if cpcpower_data:
-	print('Updating CPCSOFTS ID numbers in table {0}...'.format(table_name))
-	query = ('UPDATE ' + table_name
-		+ ' SET cpcsofts_id = %s WHERE filepath = %s')
-
-	# Check if any files are listed in the main CSV file but are not listed in
-	# the CPC-POWER CSV file
-	for filepath in file_data:
-		if filepath not in cpcpower_data:
-			print('{0} is not listed in {1}.'.format(filepath,
-				cpcpower_csv_filename), file=sys.stderr)
-
-	try:
-		connection.begin()
-		for filepath in sorted(cpcpower_data):
-			# Check that each ZIP file listed in the CPC-POWER CSV file is
-			# also listed in the main CSV file
-			if filepath[-4:].lower() == '.zip':
-				if filepath not in file_data:
-					print('{0} is not in list of files on NVG.'.format(
-						filepath), file=sys.stderr)
-				else:
-					cursor.execute(query, (cpcpower_data[filepath], filepath))
-		connection.commit()
-	except (sql.OperationalError, sql.InternalError) as db_error:
-		print(('Unable to insert rows into table {0}. The following error '
-			+ 'was encountered:').format(table_name), file=sys.stderr)
-		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
-		print('Error message: ' + db_error.args[1], file=sys.stderr)
-		connection.close()
-		quit()
-
 # Everything has been set up, so close the connection
-connection.close()
+db.disconnect()
