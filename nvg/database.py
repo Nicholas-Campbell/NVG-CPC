@@ -632,7 +632,6 @@ bool: True if the filepath was updated successfully; False if no filepath with
 			return False
 
 
-	# THIS FUNCTION IS NOT COMPLETE
 	def delete_filepath(self, id, commit=True):
 		if id is not None:
 			if not (isinstance(id, int)):
@@ -648,14 +647,16 @@ bool: True if the filepath was updated successfully; False if no filepath with
 			self.connection.begin()
 
 		query = ('DELETE FROM `{0}` WHERE filepath_id = %s'.format(
-			_escape_table_name(file_info_table)))
-		cursor.execute(query)
-		
-		rows = cursor.execute(query, query_params)
+			_escape_table_name(file_info_table)))		
+		rows = cursor.execute(query, (id))
 		if commit == True:
 			self.connection.commit()
 
 		cursor.close()
+		if rows:
+			return True
+		else:
+			return False
 
 
 	def insert_title_alias(self, filepath_id, title_alias, commit=True):

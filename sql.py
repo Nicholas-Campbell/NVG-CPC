@@ -344,59 +344,6 @@ def get_existing_title_aliases():
 	return title_aliases_info
 
 
-def _delete_filepaths_from_db():
-	# Search the list of filepaths in the main CSV file that aren't already in
-	# the database
-
-	filepaths_to_delete = []
-	for filepath in existing_filepath_ids:
-		if filepath not in file_data:
-			filepaths_to_delete.append(
-				(filepath, existing_filepath_ids[filepath]))
-
-	# If there are no filepaths to delete, then return
-	if len(filepaths_to_delete) == 0:
-		return 0
-	else:
-		# Sort the list of filepaths to delete
-		filepaths_to_delete.sort(key=lambda x: x[0])
-
-		# Build a string containing the ID numbers of the filepaths to delete,
-		# separated by commas and in numerical order (although it isn't really
-		# necessary to sort the list)
-		filepath_ids_to_delete_set = ','.join(str(value) for (key, value) in
-			filepaths_to_delete)
-
-		# Create a query string containing the list of filepath ID numbers
-
-		# Normally the method used below is discouraged due to the potential
-		# for SQL injection, but the list of filepath ID numbers should consist
-		# entirely of integers so there shouldn't be a problem?
-		try:
-			db.connection.begin()
-			for table_name in ['nvg_file_authors', 'nvg_title_aliases', 'nvg']:
-				query = ('DELETE FROM {0} WHERE filepath_id IN ({1})'.format(
-					table_name, filepath_ids_to_delete_set))
-				cursor.execute(query)
-				db.connection.commit()
-
-			# Display the list of filepaths that were deleted
-			for (filepath, filepath_id) in filepaths_to_delete:
-				print('Deleted {0} (ID {1}).'.format(filepath,
-					filepath_id))
-
-			# Return the number of filepaths that were deleted
-			return len(filepaths_to_delete)
-
-		except sql.OperationalError as db_error:
-			print(('Unable to delete rows from table {0}. The following error '
-				+ 'was encountered:').format(table_name))
-			print('Error code: ' + str(db_error.args[0]))
-			print('Error message: ' + db_error.args[1])
-			db.disconnect()
-			quit()
-
-
 # ------------
 # Main program
 # ------------
@@ -1084,7 +1031,7 @@ try:
 	db.connection.commit()
 
 except (sql.OperationalError, sql.InternalError) as db_error:
-	print(('Unable to updates rows in table {0}. The following error was '
+	print(('Unable to update rows in table {0}. The following error was '
 		+ 'encountered:').format(table_name), file=sys.stderr)
 	print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 	print('Error message: ' + db_error.args[1], file=sys.stderr)
@@ -1094,7 +1041,26 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 # If the build flag is not set, then delete filepaths from the database that
 # aren't in the main CSV file
 if build_db_flag == False:
-	_delete_filepaths_from_db()
+	try:
+		db.connection.begin()
+		for filepath in existing_filepath_ids:
+			if filepath not in file_data:
+				id = existing_filepath_ids[filepath]
+				db.delete_filepath(id, commit=False)
+				message_list.append('Deleted {0} (ID {1}).'.format(
+					filepath, id))
+
+		db.connection.commit()
+		if silent_output == False:
+			if(message_list):
+				print('\n'.join(message_list))
+	except sql.OperationalError as db_error:
+		print(('Unable to delete rows from table {0}. The following error '
+			+ 'was encountered:').format(table_name))
+		print('Error code: ' + str(db_error.args[0]))
+		print('Error message: ' + db_error.args[1])
+		db.disconnect()
+		quit()
 
 # Insert new filepaths into the database
 
@@ -1165,10 +1131,6 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 
 # Insert author information, associating authors with filepaths
 table_name = 'nvg_file_authors'
-delete_query = ('DELETE FROM ' + table_name
-	+ ' WHERE filepath_id = %s AND author_type = %s')
-insert_query = ('INSERT INTO ' + table_name + ' (filepath_id, author_id, '
-	+ 'author_type, author_index) VALUES (%s, %s, %s, %s)')
 message_list = []
 
 try:
