@@ -6,6 +6,7 @@
 CREATE TABLE nvg_type_ids (
 	type_id TINYINT UNSIGNED AUTO_INCREMENT,
 	type_desc VARCHAR(255) NOT NULL,
+	UNIQUE INDEX (type_desc),
 	PRIMARY KEY (type_id)
 );
 
@@ -15,6 +16,7 @@ CREATE TABLE nvg_type_ids (
 CREATE TABLE nvg_publication_type_ids (
 	type_id TINYINT UNSIGNED AUTO_INCREMENT,
 	type_desc VARCHAR(255) NOT NULL,
+	UNIQUE INDEX (type_desc),
 	PRIMARY KEY (type_id)
 );
 

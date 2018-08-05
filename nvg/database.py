@@ -64,6 +64,11 @@ class Database():
 	db_username = None
 	db_password = None
 
+	# Local caches for storing file and publication type ID numbers and their
+	# descriptions; these are used when inserting information about a file
+	file_types_cache = {}
+	publication_types_cache = {}
+
 	def __init__(self, db_hostname, db_name, db_username,
 		db_password):
 		"""Create a new NVG database object.
@@ -115,8 +120,8 @@ column is generated automatically using AUTO_INCREMENT.
 		"""Set up the tables, triggers, stored routines and views that are used by the
 NVG database.
 
-For the set up to be successful, the user must have been granted the following
-privileges:
+For the setting up to be successful, the user must have been granted the
+following privileges:
 CREATE, DROP, REFERENCES, ALTER ROUTINE, CREATE ROUTINE, TRIGGER, CREATE VIEW,
 SELECT
 
@@ -481,6 +486,42 @@ int: The ID number of the filepath that was inserted.
 			elif isinstance(languages, (list, tuple)):
 				languages_str = ','.join(languages)
 
+		# If the file and/or publication types are specified as strings (e.g.
+		# 'Arcade game', 'Commercial') instead of integers, then convert the
+		# string to its corresponding ID number by looking up a dictionary
+		# containing a local copy of the relevant type
+		for type_tuple in [
+			('type_id', self.file_types_cache, self.get_file_types,
+				self.get_file_type_id),
+			('publication_type_id', self.publication_types_cache,
+				self.get_publication_types, self.get_publication_type_id)
+			]:
+			keyword = type_tuple[0]
+			cache = type_tuple[1]
+			if keywords.get(keyword) is not None:
+				# If the type ID is a string, then get its corresponding ID
+				# number (if there is one)
+				if isinstance(keywords[keyword], str):
+					# If the local copy of type descriptions is empty, then get
+					# all the valid ID numbers and their descriptions from the
+					# database
+					if len(cache) == 0:
+						cache = type_tuple[2]()
+
+					# Look up the description in the local copy
+					description = keywords[keyword]
+					if (description in cache):
+						keywords[keyword] = cache[description]
+
+					# If the description is not in the local copy, then look
+					# it up in the database; if it has an ID number, then use
+					# it
+					else:
+						type_id = type_tuple[3](description)
+						if type_id is not None:
+							cache[description] = type_id
+							keywords[keyword] = type_id
+
 		# Build an SQL query string that will be sent to the database server
 		query = ('INSERT INTO `{0}` (filepath_id, filepath, '
 			+ 'file_size').format(_escape_table_name(file_info_table))
@@ -818,6 +859,44 @@ dict: A dictionary containing the specified keys and values.
 		return dict
 
 
+	def _get_value(self, db_table, key_column, value_column, search_term):
+		# Convert backticks in arguments to double backticks so they can
+		# be used in queries
+		key_column_escaped = key_column.replace('`', '``')
+		value_column_escaped = value_column.replace('`', '``')
+
+		self.connect()
+		cursor = self.connection.cursor()
+
+		# Select the first row from the specified table that matches the
+		# search term
+		query = ('SELECT `{0}` FROM `{1}` WHERE `{2}` LIKE %s'.
+			format(value_column_escaped, _escape_table_name(db_table),
+				key_column_escaped))
+		rows = cursor.execute(query, (search_term))
+
+		id = None
+		if rows > 0:
+			id = cursor.fetchone()[0]
+
+		cursor.close()
+		return id
+
+
+	def get_file_type_id(self, description):
+		"""Get the ID number of a file type from the NVG database that matches the
+specified description.
+
+Parameters:
+description (str): The file type description.
+
+Returns:
+int: The ID number of the file type, or None if no file type matching the
+    description was found."""
+		return self._get_value(file_type_ids_table, 'type_desc', 'type_id',
+			description)
+
+
 	def get_file_types(self):
 		"""Retrieve a dictionary of file types and their corresponding ID numbers from
 the NVG database.
@@ -827,6 +906,20 @@ A dictionary containing file type descriptions as the keys, and their ID
 numbers as the values.
 """
 		return self._get_dict(file_type_ids_table, 'type_desc', 'type_id')
+
+
+	def get_publication_type_id(self, description):
+		"""Get the ID number of a publication type from the NVG database that matches the
+specified description.
+
+Parameters:
+description (str): The publication type description.
+
+Returns:
+int: The ID number of the publication type, or None if no publication type
+    matching the description was found."""
+		return self._get_value(publication_type_ids_table, 'type_desc',
+			'type_id', description)
 
 
 	def get_publication_types(self):
