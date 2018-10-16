@@ -1,5 +1,5 @@
 # (C) Nicholas Campbell 2018
-# Last update: 2018-07-22
+# Last update: 2018-16-10
 
 import os
 import pymysql as sql
@@ -15,6 +15,17 @@ file_type_ids_table = 'nvg_type_ids'
 language_codes_table = 'nvg_language_codes'
 publication_type_ids_table = 'nvg_publication_type_ids'
 title_aliases_table = 'nvg_title_aliases'
+
+# Names of columns in the file information table on the database server; this
+# is used by routines for inserting new filepaths and updating existing
+# filepaths
+
+valid_column_keywords = ['filepath', 'file_size', 'cpcsofts_id', 'title',
+	'company', 'year', 'languages', 'type_id', 'subtype',
+	'title_screen', 'cheat_mode', 'protected', 'problems',
+	'upload_date', 'uploader', 'comments', 'original_title',
+	'publication_type_id', 'publisher_code', 'barcode', 'dl_code',
+	'memory_required', 'run_command', 'protection']
 
 # Strings used to form error messages when raising exceptions
 
@@ -457,16 +468,11 @@ keywords (dict, optional): A dictionary of values associated with this
 Returns:
 int: The ID number of the filepath that was inserted.
 """
-		valid_keywords = ['cpcsofts_id', 'title', 'company', 'year',
-			'languages', 'type_id', 'subtype', 'title_screen', 'cheat_mode',
-			'protected', 'problems', 'upload_date', 'uploader', 'comments',
-			'original_title', 'publication_type_id', 'publisher_code',
-			'barcode', 'dl_code', 'memory_required']
-
 		# Check that all the keywords supplied are valid; if not, raise an
 		# exception
 		for keyword in keywords:
-			if keyword not in valid_keywords:
+			if (keyword not in valid_column_keywords or keyword in
+				['filepath', 'file_size']):
 				raise TypeError('insert_filepath() got an unexpected keyword '
 					+ 'argument ' + repr(keyword))
 
@@ -531,7 +537,7 @@ int: The ID number of the filepath that was inserted.
 		# Iterate through the list of keywords supplied to the function; each
 		# keyword represents a column name
 		if keywords:
-			for keyword in valid_keywords:
+			for keyword in valid_column_keywords:
 				if keyword in keywords:
 					query += ', ' + keyword
 
@@ -588,13 +594,6 @@ bool: True if the filepath was updated successfully; False if no filepath with
     the specified ID number exists, or there were column names passed to the
 	function (which means there was nothing to update).
 """
-		valid_keywords = ['filepath', 'file_size', 'cpcsofts_id', 'title',
-			'company', 'year', 'languages', 'type_id', 'subtype',
-			'title_screen', 'cheat_mode', 'protected', 'problems',
-			'upload_date', 'uploader', 'comments', 'original_title',
-			'publication_type_id', 'publisher_code', 'barcode', 'dl_code',
-			'memory_required']
-
 		# If there are no columns to update, then return
 		if len(keywords) == 0:
 			return False
@@ -602,7 +601,7 @@ bool: True if the filepath was updated successfully; False if no filepath with
 			# Check that all the keywords supplied are valid; if not, raise an
 			# exception
 			for keyword in keywords:
-				if keyword not in valid_keywords:
+				if keyword not in valid_column_keywords:
 					raise TypeError('update_filepath() got an unexpected '
 						+ 'keyword argument ' + repr(keyword))
 
@@ -631,7 +630,7 @@ bool: True if the filepath was updated successfully; False if no filepath with
 		# Iterate through the list of keywords supplied to the function; each
 		# keyword represents a column name
 		if keywords:
-			for keyword in valid_keywords:
+			for keyword in valid_column_keywords:
 				if keyword in keywords:
 					if query_values:
 						query_values += ', '

@@ -7,7 +7,7 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-07-22
+# Last update: 2018-10-16
 
 import csv
 import datetime
@@ -1025,6 +1025,8 @@ try:
 				barcode=file_data[filepath].get('BARCODE'),
 				dl_code=file_data[filepath].get('DL CODE'),
 				memory_required=file_data[filepath].get('MEMORY REQUIRED'),
+				protection=file_data[filepath].get('PROTECTION'),
+				run_command=file_data[filepath].get('RUN COMMAND'),
 				commit=False
 			)
 
@@ -1110,6 +1112,8 @@ try:
 				barcode=file_data[filepath].get('BARCODE'),
 				dl_code=file_data[filepath].get('DL CODE'),
 				memory_required=file_data[filepath].get('MEMORY REQUIRED'),
+				protection=file_data[filepath].get('PROTECTION'),
+				run_command=file_data[filepath].get('RUN COMMAND'),
 				commit=False
 			)
 			file_data[filepath]['ID'] = filepath_id
