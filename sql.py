@@ -7,7 +7,7 @@ the following URL:
 """
 
 # by Nicholas Campbell 2017-2018
-# Last update: 2018-10-16
+# Last update: 2019-04-07
 
 import csv
 import datetime
@@ -42,12 +42,11 @@ author_set_def = ','.join([repr(type) for type in author_field_list])
 memory_required_valid_values = [64, 128, 256]
 
 # Get the list of IETF language codes in alphabetical order and store
-# them in a comma-delimited string for use in defining the main table later
-# on
+# them in a comma-delimited string for use in defining the main table later on
 language_codes_dict = {
-	'Catalan': 'ca', 'Danish': 'da', 'Dutch': 'nl', 'English': 'en',
-	'English (American)': 'en-US', 'French': 'fr', 'German': 'de',
-	'Greek': 'el', 'Irish': 'ga', 'Italian': 'it',
+	'Arabic': 'ar', 'Catalan': 'ca', 'Danish': 'da', 'Dutch': 'nl',
+	'English': 'en', 'English (American)': 'en-US', 'French': 'fr',
+	'German': 'de', 'Greek': 'el', 'Irish': 'ga', 'Italian': 'it',
 	'Portuguese (Brazilian)': 'pt-BR', 'Spanish': 'es', 'Swedish' : 'sv'
 }
 language_codes_list = []
