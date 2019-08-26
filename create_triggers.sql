@@ -29,7 +29,7 @@ BEGIN
 	OR (protection IS NOT NULL AND protection != '')
 	OR (run_command IS NOT NULL AND run_command != '')
 	THEN
-		SET file_id_diz_version = 3.00;
+		SET file_id_diz_version := 3.00;
 	END IF;
 
 	-- Check fields used in version 3.10
@@ -185,5 +185,75 @@ BEGIN
 			WHERE filepath_id = NEW.filepath_id
 			AND author_type = NEW.author_type) + 1;
 	END IF;
+END //
+DELIMITER ;
+
+
+/* Procedure used by triggers to validate language codes being entered into the
+   nvg_language_codes table
+
+   The IETF language code must consist of a primary language subtag (two
+   letters) and an optional region subtag (two letters); if both subtags
+   are used, then they must be separated by a hyphen
+
+   For more details, visit the URLs below:
+   https://tools.ietf.org/html/rfc5646
+   https://en.wikipedia.org/wiki/IETF_language_tag */
+
+DROP PROCEDURE IF EXISTS validate_language_code;
+
+DELIMITER //
+CREATE PROCEDURE validate_language_code(INOUT language_code VARCHAR(5))
+BEGIN
+	DECLARE error_message VARCHAR(128);
+
+	-- Confirm that the language code is in the correct format using a
+	-- regular expression
+	IF language_code REGEXP '^[a-z]{2}(-[A-Z]{2})?+$' = 0 THEN
+		SET error_message := CONCAT('\'', language_code, '\' is not a valid IETF language code for use in the nvg_language_codes table');
+		SIGNAL SQLSTATE '45000' SET message_text = error_message;
+	END IF;
+
+	-- Convert the subtags to their correct case; the primary language subtag
+	-- should be in lower case, and the region subtag should be in upper case
+
+	-- If only the primary language subtag is specified, then the language code
+	-- will be 2 characters in length
+	IF LENGTH(language_code) = 2 THEN
+		SET language_code = LOWER(language_code);
+	-- If both the primary language subtag and the region subtag are specified,
+	-- then the language code will be 5 characters in length
+	ELSEIF LENGTH(language_code) = 5 THEN
+		SET language_code = CONCAT(LOWER(SUBSTRING(language_code, 1, 2)),
+			'-', UPPER(SUBSTRING(language_code, 4, 2)));
+	END IF;
+END //
+DELIMITER ;
+
+
+/* Trigger to validate language codes being inserted into the languages
+   table */
+
+DROP TRIGGER IF EXISTS validate_language_code_bi;
+
+DELIMITER //
+CREATE TRIGGER validate_language_code_bi
+BEFORE INSERT ON nvg_language_codes FOR EACH ROW
+BEGIN
+	CALL validate_language_code(NEW.language_code);
+END //
+DELIMITER ;
+
+
+/* Trigger to validate language codes being updated in the languages
+   table */
+
+DROP TRIGGER IF EXISTS validate_language_code_bu;
+
+DELIMITER //
+CREATE TRIGGER validate_language_code_bu
+BEFORE UPDATE ON nvg_language_codes FOR EACH ROW
+BEGIN
+	CALL validate_language_code(NEW.language_code);
 END //
 DELIMITER ;

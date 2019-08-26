@@ -53,7 +53,7 @@ BEGIN
 		SELECT alias_of_author_id FROM nvg_author_ids
 			WHERE author_id = author_id_param
 			INTO author_id_result;
-		IF author_id_result IS NULL THEN leave find_top_of_tree_loop;
+		IF author_id_result IS NULL THEN LEAVE find_top_of_tree_loop;
 		ELSE SET author_id_param := author_id_result;
 		END IF;
 	END LOOP find_top_of_tree_loop;
@@ -70,7 +70,7 @@ BEGIN
 			-- more nodes are found, then the entire tree has been
 			-- traversed
 			FETCH cur1 INTO author_id_result;
-			IF all_rows_read = TRUE THEN leave add_aliases_to_tree_loop;
+			IF all_rows_read = TRUE THEN LEAVE add_aliases_to_tree_loop;
 			END IF;
 
 			-- Insert the results into the temporary table
@@ -157,9 +157,9 @@ CREATE FUNCTION concat_title_aliases(filepath_id_param INT UNSIGNED)
 	RETURNS VARCHAR(1000)
 BEGIN
 	RETURN (
-		SELECT GROUP_CONCAT(title SEPARATOR '; ') FROM nvg_title_aliases
+		SELECT GROUP_CONCAT(title ORDER BY title SEPARATOR '; ')
+		FROM nvg_title_aliases
 		WHERE filepath_id = filepath_id_param
-		ORDER BY title
 	);
 END //
 DELIMITER ;

@@ -6,8 +6,8 @@ the following URL:
 <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 """
 
-# by Nicholas Campbell 2017-2018
-# Last update: 2019-04-07
+# by Nicholas Campbell 2017-2019
+# Last update: 2019-08-26
 
 import csv
 import datetime
@@ -22,7 +22,6 @@ import re
 import socket
 import sys
 import tempfile
-import warnings
 
 
 # --------------------------------------------
@@ -49,12 +48,6 @@ language_codes_dict = {
 	'German': 'de', 'Greek': 'el', 'Irish': 'ga', 'Italian': 'it',
 	'Portuguese (Brazilian)': 'pt-BR', 'Spanish': 'es', 'Swedish' : 'sv'
 }
-language_codes_list = []
-for language, code in sorted(language_codes_dict.items()):
-	language_codes_list.append(code)
-language_codes_list.sort(key=str.lower)
-language_set_def = ','.join([repr(code) for code in language_codes_list])
-del language_codes_list
 
 
 def _print_help():
@@ -227,6 +220,84 @@ columns.
 
 	cursor.close()
 	return(dict)
+
+
+def _update_language_codes():
+	table_name = nvg.database.language_codes_table
+	number_of_languages_updated = 0
+
+	db.connection.begin()
+
+	# Check if any languages need to be added to the table of languages
+	for (language, code) in language_codes_dict.items():
+		language_info_updated = 0
+
+		# If the language code is not already defined in the table of
+		# languages, then it needs to be added to the database
+		if code not in existing_language_codes_dict.values():
+			language_info_updated = 1
+
+		# The language code is defined in the database, but its name in the
+		# language_codes_dict dictionary is different, so update it with the
+		# name used in language_codes_dict
+		else:
+			for (language2, code2) in existing_language_codes_dict.items():
+				if code == code2 and language != language2:
+					language_info_updated = 2
+
+		# Insert or update the language code and name if necessary
+
+		# The status of language_info_updated is as follows:
+		# 1 = information added to database
+		# 2 = information updated in database
+
+		if language_info_updated:
+			number_of_languages_updated += 1
+
+			# If at least one language needs to be added, updated or deleted,
+			# print a message stating that language codes are being updated,
+			# but only do this once
+			if number_of_languages_updated == 1:
+				print('Updating language codes...')
+
+			if language_info_updated == 1:
+				db.insert_language(language, code)
+				if silent_output == False:
+					print('Added {0} ({1}) to table {2}.'.format(language,
+						code, table_name))
+				existing_language_codes_dict[language] = code
+			elif language_info_updated == 2:
+				db.update_language(language, code)
+				if silent_output == False:
+					print(('Updated language code {0} to {1} in table '
+						+ '{2}.').format(repr(code), language, table_name))
+				existing_language_codes_dict[language] = code
+
+	# Check if any language codes need to be deleted from the table of
+	# languages, by iterating the list of languages on the database and trying
+	# to find a match in the language_codes_dict dictionary
+	languages_to_be_deleted = []
+	for (language, code) in existing_language_codes_dict.items():
+		match_found = False
+		for code2 in language_codes_dict.values():
+			if code == code2:
+				match_found = True
+				break
+
+		# If there is no match, then mark the language for deletion from the
+		# database
+		if match_found == False:
+			db.delete_language(code)
+			if silent_output == False:
+				print('Deleted {0} ({1}) from table {2}.'.format(language,
+					code, table_name))
+			languages_to_be_deleted.append(language)
+
+	# Delete any languages that were marked for deletion earlier
+	for language in languages_to_be_deleted:
+		del existing_language_codes_dict[language]
+
+	db.connection.commit()
 
 
 # Retrieve all the existing author information from the database
@@ -501,8 +572,8 @@ try:
 except FileNotFoundError:
 	print(('Unable to read {0}. CPCSOFTS ID numbers will not be added or '
 		+ 'updated.').format(cpcpower_csv_filename))
-# If a temporary directory was created earlier, delete the directory and
-# its contents
+# If a temporary directory was created earlier, delete the directory and its
+# contents
 finally:
 	if download_files_from_ftp_host_flag:
 		temp_dir.cleanup()
@@ -596,6 +667,9 @@ else:
 		type_ids_dict = db.get_file_types()
 		existing_title_aliases_dict = get_existing_title_aliases()
 
+		# Retrieve existing IETF language tags
+		existing_language_codes_dict = db.get_languages()
+
 		# Retrieve filepath author information
 		existing_filepath_id_author_info = \
 			get_existing_filepath_id_author_info()
@@ -647,32 +721,48 @@ if build_db_flag == True:
 		db.connection.begin()
 
 		# List of file types (nvg_type_ids)
+		table_name = nvg.database.file_type_ids_table
 		if silent_output == False:
-			print(message_insert_rows.format(nvg.database.file_type_ids_table))
+			print(message_insert_rows.format(table_name))
 		for type_desc, type_id in sorted(type_ids_dict.items(),
 			key=lambda x: x[1]):
 			db.insert_file_type(type_desc, type_id, commit=False)
 
 		# List of publication types (nvg_publication_type_ids)
+		table_name = nvg.database.publication_type_ids_table
 		if silent_output == False:
-			print(message_insert_rows.format(
-				nvg.database.publication_type_ids_table))
+			print(message_insert_rows.format(table_name))
 		for type_desc, type_id in sorted(publication_type_ids_dict.items(),
 			key=lambda x: x[1]):
 			db.insert_publication_type(type_desc, type_id, commit=False)
 
 		# List of language codes
+		table_name = nvg.database.language_codes_table
 		if silent_output == False:
-			print(message_insert_rows.format(
-				nvg.database.language_codes_table))
+			print(message_insert_rows.format(table_name))
 		for language, code in sorted(language_codes_dict.items(),
 			key=lambda x: x[1]):
-			db.insert_language(language, code, commit=False)
+			db.insert_language(language, code)
 
 		db.connection.commit()
 	except sql.OperationalError as db_error:
 		print(('Unable to insert rows into table {0}. The following error was '
 			+ 'encountered:').format(table_name), file=sys.stderr)
+		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
+		print('Error message: ' + db_error.args[1], file=sys.stderr)
+		db.disconnect()
+		quit()
+
+# If the build flag is not set, check if any new languages need to be added to
+# or updated in the tables containing IETF language tags
+else:
+	try:
+		_update_language_codes()
+	except (sql.OperationalError, sql.DataError) as db_error:
+		print(('Unable to update language codes in tables {0} and {1}. The '
+			+ 'following error was encountered:').format(
+			nvg.database.language_codes_table, nvg.database.file_info_table),
+			file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
 		db.disconnect()
@@ -698,8 +788,8 @@ if authors_to_add:
 		db.connection.commit()
 	except sql.OperationalError as db_error:
 		print(('Unable to insert authors into table {0}. The '
-			+ 'following error was encountered:').format(table_name),
-			file=sys.stderr)
+			+ 'following error was encountered:').format(
+			nvg.database.author_ids_table), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
 		db.disconnect()
@@ -796,7 +886,7 @@ if author_aliases_dict:
 				db.connection.rollback()
 				print(('Unable to update author name {0} in table {1}. The '
 					+ 'following error was encountered:').format(author_name,
-					table_name), file=sys.stderr)
+					nvg.database.author_ids_table), file=sys.stderr)
 				print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 				print('Error message: ' + db_error.args[1], file=sys.stderr)
 				db.disconnect()
@@ -811,8 +901,8 @@ if author_aliases_dict:
 				print('\n'.join(message_list))
 	except sql.OperationalError as db_error:
 		print(('Unable to insert author {0} into table {1}. The following '
-			+ 'error was encountered:').format(author_name, table_name),
-			file=sys.stderr)
+			+ 'error was encountered:').format(author_name,
+			nvg.database.author_ids_table), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
 		print('Error message: ' + db_error.args[1], file=sys.stderr)
 		db.disconnect()
@@ -979,7 +1069,7 @@ for filepath in sorted(file_data):
 
 # Update information about existing filepaths on the database
 
-table_name = 'nvg'
+table_name = nvg.database.file_info_table
 message_list = []
 update_message_displayed = False
 
@@ -1133,7 +1223,7 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 	quit()
 
 # Insert author information, associating authors with filepaths
-table_name = 'nvg_file_authors'
+table_name = nvg.database.file_authors_table
 message_list = []
 
 try:
@@ -1255,7 +1345,7 @@ except (sql.OperationalError, sql.InternalError) as db_error:
 	quit()
 
 # Insert aliases of titles
-table_name = 'nvg_title_aliases'
+table_name = nvg.database.title_aliases_table
 message_list = []
 
 try:

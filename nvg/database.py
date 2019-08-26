@@ -1,8 +1,9 @@
-# (C) Nicholas Campbell 2018
-# Last update: 2018-16-10
+# (C) Nicholas Campbell 2018-2019
+# Last update: 2019-08-26
 
 import os
 import pymysql as sql
+import re
 import sys
 import warnings
 
@@ -103,7 +104,7 @@ use_database (bool, optional): If False, do not select any database. This is
 		if (self.connection == None) or (self.connection.open == False):
 			self.connection = sql.connect(host = self.db_hostname,
 				user = self.db_username, password = self.db_password,
-				charset = 'utf8')
+				charset = 'utf8', autocommit = False)
 			if use_database:
 				self.connection.select_db(self.db_name)
 
@@ -285,15 +286,15 @@ Nothing.
 			_escape_table_name(author_ids_table))
 		assert id in range(1,65536)
 		assert alias_of_id in range(1,65536)
-		rows = cursor.execute(query, (name, alias_of_id, id))
+		rows_updated = cursor.execute(query, (name, alias_of_id, id))
 		if commit == True:
 			self.connection.commit()
 
 		# If the specified author ID number is not in the database, then
 		# the number of rows that were updated is zero
 		cursor.close()
-		assert rows in range(0,2)
-		if rows:
+		assert rows_updated in range(0,2)
+		if rows_updated:
 			return True
 		else:
 			return False
@@ -387,14 +388,14 @@ bool: True if the author information was updated successfully; False if no
 
 		assert (filepath_id is None) or (filepath_id in range(1,4294967296))
 		assert (author_id is None) or (author_id in range(1,65536))
-		rows = cursor.execute(query, query_params)
+		rows_deleted = cursor.execute(query, query_params)
 		if commit == True:
 			self.connection.commit()
 
 		# If the specified filepath ID number is not in the database, then
 		# the number of rows that were updated is zero
 		cursor.close()
-		if rows:
+		if rows_deleted:
 			return True
 		else:
 			return False
@@ -658,15 +659,15 @@ bool: True if the filepath was updated successfully; False if no filepath with
 		query += query_values + ' WHERE filepath_id = {0}'.format(id)
 
 		assert (id in range(0,4294967296))
-		rows = cursor.execute(query, query_params)
+		rows_updated = cursor.execute(query, query_params)
 		if commit == True:
 			self.connection.commit()
 
 		# If the specified filepath ID number is not in the database, then
 		# the number of rows that were updated is zero
 		cursor.close()
-		assert rows in range(0,2)
-		if rows:
+		assert rows_updated in range(0,2)
+		if rows_updated:
 			return True
 		else:
 			return False
@@ -688,12 +689,12 @@ bool: True if the filepath was updated successfully; False if no filepath with
 
 		query = ('DELETE FROM `{0}` WHERE filepath_id = %s'.format(
 			_escape_table_name(file_info_table)))		
-		rows = cursor.execute(query, (id))
+		rows_deleted = cursor.execute(query, (id))
 		if commit == True:
 			self.connection.commit()
 
 		cursor.close()
-		if rows:
+		if rows_deleted:
 			return True
 		else:
 			return False
@@ -726,7 +727,7 @@ bool: True if the filepath was updated successfully; False if no filepath with
 
 		query = 'DELETE FROM `{0}` WHERE filepath_id = %s'.format(
 			_escape_table_name(title_aliases_table))
-		rows = cursor.execute(query, (filepath_id))
+		rows_deleted = cursor.execute(query, (filepath_id))
 
 		if commit == True:
 			self.connection.commit()
@@ -735,13 +736,50 @@ bool: True if the filepath was updated successfully; False if no filepath with
 		# there are no title aliases associated with the filepath, then the
 		# number of rows that were updated is zero
 		cursor.close()
-		if rows:
+		if rows_deleted:
 			return True
 		else:
 			return False
 
 
-	def insert_language(self, name, code, commit=True):
+	def _get_languages_column_set(self):
+		"""Get the set of IETF language tags that are defined in the languages column of
+the file information table.
+
+Returns:
+list: A list containing the set of IETF language tags, or None if the column is
+    not defined using the SET type (e.g. it is defined using the VARCHAR type
+    instead).
+"""
+		# Generate a query to retrieve the elements of the set in the languages
+		# column from the information_schemas.columns table
+		query = ('SELECT COLUMN_TYPE FROM `information_schema`.`columns` '.format(
+			_escape_table_name(language_codes_table))
+			+ 'WHERE table_schema = %s AND table_name = %s '
+			+ "AND column_name = 'languages'")
+		cursor = self.connection.cursor()
+
+		# Get the set as a string; it will be in a format like
+		# "set('de','en','es','fr')" if it is defined using the SET type
+		cursor.execute(query, (self.db_name, file_info_table))
+		row = cursor.fetchone()
+		match = re.fullmatch('set\((.*)\)', row[0], re.IGNORECASE)
+
+		# If the language column is defined as a set, then convert the elements
+		# of the set to a list by splitting the string and removing the
+		# surrounding single quotes from each element
+		if match:
+			languages_column_set_list = match.group(1).split(sep=',')
+			for i in range(0,len(languages_column_set_list)):
+				languages_column_set_list[i] = \
+					languages_column_set_list[i][
+						1:len(languages_column_set_list[i])-1]
+			return languages_column_set_list
+		else:
+			return None
+
+
+	def insert_language(self, name, code):
 		"""Insert a language name and its corresponding IETF language tag into the NVG
 database.
 
@@ -762,17 +800,149 @@ str: The IETF language tag that was inserted.
 		# Connect to the database
 		self.connect()
 		cursor = self.connection.cursor()
-		if commit == True:
-			self.connection.begin()
+		self.connection.begin()
 
+		# Check if the IETF language tag is already defined in the languages
+		# column of the file information table; if it is not, then attempt to
+		# add it to the set
+
+		# The ALTER TABLE command always causes an implicit commit before
+		# execution, so it should be executed first; if it fails, then the
+		# language name and code won't be inserted into the nvg_language_codes
+		# table
+		languages_column_set_list = self._get_languages_column_set()
+
+		if (languages_column_set_list is not None and
+			code not in languages_column_set_list):
+			languages_column_set_list.append(code)
+			query = ('ALTER TABLE `{0}` '.format(
+				_escape_table_name(file_info_table))
+				+ 'MODIFY languages SET('
+				+ ','.join(("'" + code + "'")
+					for code in sorted(languages_column_set_list))
+				+ ')'
+				)
+			try:
+				cursor.execute(query)
+			except sql.InternalError as db_error:
+				self.connection.rollback()
+
+				# MySQL allows a maximum of 64 members in columns defined with
+				# the SET type; attempting to add any more members than this
+				# results in an error
+				if db_error.args[0] == 1097:
+					error_message = ("Unable to insert language code {0} into "
+						+ "column 'languages' in table '{1}'; a maximum of 64 "
+						+ "language codes can be defined").format(
+						repr(code), language_codes_table)
+					raise sql.DataError(1097, error_message)
+
+		# Insert the language description and IETF language tag into the table
+		# of language codes
 		query = ('INSERT INTO `{0}` (language_code, language_desc) '
 			+ 'VALUES (%s, %s)').format(
 			_escape_table_name(language_codes_table))
 		cursor.execute(query, (code, name))
+
+		self.connection.commit()
+
+		return code
+
+
+	def update_language(self, name, code, commit=True):
+		"""Update an IETF language tag with a new name in the NVG database.
+
+Parameters:
+name (str): The new name of the language (e.g. 'English', 'English (American)',
+    'French', 'Spanish').
+code (str): The IETF language tag that is associated with the specified
+    language (e.g. 'en', 'en-US', 'fr', 'es').
+
+Returns:
+bool: True if the IETF language tag was updated, False if the IETF language tag
+    does not exist in the database.
+"""
+		# Connect to the database
+		self.connect()
+		cursor = self.connection.cursor()
+		if commit == True:
+			self.connection.begin()
+
+		# Update the IETF language tag with its new name
+		query = ('UPDATE `{0}` SET language_desc = %s '
+			+ 'WHERE language_code = %s').format(
+			_escape_table_name(language_codes_table))
+		rows_updated = cursor.execute(query, (name, code))
 		if commit == True:
 			self.connection.commit()
 
-		return code
+		# Return True or False depending on whether or not the IETF language
+		# tag exists in the table
+		if rows_updated:
+			return True
+		else:
+			return False
+
+
+	def delete_language(self, code):
+		"""Delete a language name and its corresponding IETF language tag from the NVG
+database.
+
+Parameters:
+code (str): The IETF language tag to delete (e.g. 'en', 'en-US', 'fr', 'es').
+
+Returns:
+bool: True if the IETF language tag was deleted, False if the IETF language tag
+    does not exist in the database.
+"""
+		# Connect to the database
+		self.connect()
+		cursor = self.connection.cursor()
+		self.connection.begin()
+
+		# Attempt to remove the IETF language tag from the set of elements in
+		# the languages column of the file information table
+
+		# The ALTER TABLE command always causes an implicit commit before
+		# execution, so it should be executed first; if it fails, then the
+		# language name and code won't be deleted from the nvg_language_codes
+		# table
+		languages_column_set_list = self._get_languages_column_set()
+
+		if (languages_column_set_list is not None and
+			code in languages_column_set_list):
+			languages_column_set_list.remove(code)
+			query = ('ALTER TABLE `{0}` '.format(
+				_escape_table_name(file_info_table))
+				+ 'MODIFY languages SET('
+				+ ','.join(("'" + code + "'")
+					for code in sorted(languages_column_set_list))
+				+ ')'
+				)
+			try:
+				cursor.execute(query)
+			except sql.DataError as db_error:
+				self.connection.rollback()
+				if db_error.args[0] == 1265:
+					error_message = ("Unable to delete language code {0} from "
+						+ "column 'languages' in table '{1}' because at least "
+						+ 'one row uses this language code').format(repr(code),
+						language_codes_table)
+					raise sql.DataError(1265, error_message)
+
+		# Delete the IETF language tag from the table of language codes
+		query = 'DELETE FROM `{0}` WHERE language_code = %s'.format(
+			_escape_table_name(language_codes_table))
+		rows_deleted = cursor.execute(query, (code))
+
+		self.connection.commit()
+
+		# Return True or False depending on whether or not the IETF language
+		# tag exists in the table
+		if rows_deleted:
+			return True
+		else:
+			return False
 
 
 	def insert_publication_type(self, description, id=None, commit=True):

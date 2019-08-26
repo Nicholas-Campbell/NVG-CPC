@@ -24,7 +24,7 @@ CREATE TABLE nvg_publication_type_ids (
    'French', 'es' = 'Spanish', 'de' = 'German') */
 
 CREATE TABLE nvg_language_codes (
-	language_code VARCHAR(5) NOT NULL,
+	language_code VARCHAR(5) CHARACTER SET ascii NOT NULL,
 	language_desc VARCHAR(30) NOT NULL,
 	UNIQUE INDEX (language_desc),
 	PRIMARY KEY (language_code)
@@ -44,7 +44,7 @@ CREATE TABLE nvg (
 	company VARCHAR(255),
 	year DATE,
 	languages SET('ar','ca','da','de','el','en','en-US','es','fr','ga','it',
-		'nl','pt-BR','sv'),
+		'nl','pt-BR','sv') CHARACTER SET ascii,
 	type_id TINYINT UNSIGNED,
 	subtype VARCHAR(255),
 	title_screen VARCHAR(50),
