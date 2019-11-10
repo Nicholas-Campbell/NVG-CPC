@@ -7,6 +7,10 @@ import re
 import sys
 import warnings
 
+# Path to execute the MySQL command
+
+mysql_filepath = 'mysql'
+
 # Names of tables in the database server
 
 file_info_table = 'nvg'
@@ -144,8 +148,9 @@ silent_output (bool): If True, then be more silent and don't print any
 Returns:
 Nothing.
 """
-		db_command_base = ('mysql -h {0} -u {1} --password={2}').format(
-			self.db_hostname, self.db_username, self.db_password)
+		db_command_base = (mysql_filepath
+			+ ' -h {0} -u {1} --password={2}').format(self.db_hostname,
+			self.db_username, self.db_password)
 		db_tables_source_file = 'create_tables.sql'
 		db_triggers_source_file = 'create_triggers.sql'
 		db_stored_routines_source_file = 'create_stored_routines.sql'

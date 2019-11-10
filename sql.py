@@ -33,6 +33,16 @@ nvg_csv_filename = r'00_table.csv'
 author_aliases_csv_filename = r'author_aliases.csv'
 cpcpower_csv_filename = r'cpcpower.csv'
 
+ftp_hostname = 'ftp.nvg.ntnu.no'
+ftp_nvg_csv_filepath = 'pub/cpc/00_table.csv'
+ftp_cpcpower_csv_filepath = 'pub/cpc/cpcpower.csv'
+ftp_author_aliases_csv_filepath = 'pub/cpc/author_aliases.csv'
+
+# Flag to determine whether or not to download the CSV files from the NVG
+# archive
+download_files_from_ftp_host_flag = True
+
+# List of fields used in the main CSV file that represent authors
 author_field_list = ['PUBLISHER','RE-RELEASED BY','CRACKER','DEVELOPER',
 	'AUTHOR','DESIGNER','ARTIST','MUSICIAN']
 author_set_def = ','.join([repr(type) for type in author_field_list])
@@ -54,17 +64,23 @@ def _print_help():
 	"""Display the help message associated with this program.
 """
 	indent = ' '*22
+	print('Read CSV files from the Amstrad CPC section of the NVG FTP site at\n'
+		+ '<ftp://{0}/pub/cpc/> '.format(ftp_hostname)
+		+ 'and maintain the information in these files in\n'
+		+ 'a MySQL database.\n')
 	print('Usage: {0} [OPTIONS] [database]\n'.format(sys.argv[0]))
 	print('The following options can be used:')
 	print('  -?, --help          Display this help message and exit.')
-	print('  --build             Rebuild the entire database.')
+	print('  --build             Rebuild the entire database. USE WITH CAUTION!')
 	print('  -D, --database=name Database to use.')
-	print('  --ftp-download      Download CSV files from the NVG FTP site\n'
-		+ indent + '(ftp://ftp.nvg.ntnu.no/pub/cpc/) instead of using '
-		+ 'locally\n'
-		+ indent + 'stored files.')
+	print('  --ftp-download      Download CSV files from the NVG FTP site '
+		+ 'instead of\n'
+		+ indent + 'reading locally stored files.')
 	print('  -h, --host=name     Connect to host.')
 	print('  -p, --password=name Password to use when connecting to host.')
+	print('  --read-local-files  Read CSV files locally instead of downloading '
+		+ 'them from\n'
+		+ indent + 'the NVG FTP site.')
 	print('  -s, --silent        Be more silent. Don\'t print any information '
 		+ 'about what\n'
 		+ indent + 'changes were made to the database.')
@@ -73,6 +89,12 @@ def _print_help():
 		+ indent + 'is specified then the current login username will be\n'
 		+ indent + 'used.')
 
+	# Print the default mode for reading the CSV files
+	print('\nThe default mode is to ', end='')
+	if download_files_from_ftp_host_flag:
+		print('download the CSV files from the NVG FTP site.')
+	else:
+		print('read the CSV files locally.')
 
 def download_file_from_ftp_host(ftp_host, dir, filepath, file_transfer_mode):
 	"""Download a file from an FTP site.
@@ -427,11 +449,6 @@ db_name_set_in_options = False	# Has the name of the database been set in the
 build_db_flag = False			# Does the database need to be rebuilt?
 silent_output = False			# Silent output mode
 
-ftp_hostname = 'ftp.nvg.ntnu.no'
-ftp_nvg_csv_filepath = 'pub/cpc/00_table.csv'
-ftp_cpcpower_csv_filepath = 'pub/cpc/cpcpower.csv'
-download_files_from_ftp_host_flag = False
-
 
 # Parse command line arguments
 #
@@ -440,7 +457,7 @@ download_files_from_ftp_host_flag = False
 try:
 	optlist, args = getopt.getopt(sys.argv[1:], '?D:h:u:p:s',
 		['help', 'database=', 'host=', 'user=', 'password=', 'silent',
-		'build', 'ftp-download'])
+		'build', 'ftp-download', 'read-local-files'])
 	# If more than one database name is supplied, then print the help message
 	# and quit
 	if len(args) > 1:
@@ -469,6 +486,8 @@ try:
 				build_db_flag = True
 			elif option == '--ftp-download':
 				download_files_from_ftp_host_flag = True
+			elif option == '--read-local-files':
+				download_files_from_ftp_host_flag = False
 
 		# Check if more than one database has been specified (i.e. by using
 		# -D or --database, as well as specifying the name of the database as
@@ -497,7 +516,7 @@ cpcpower_data = {}	# Dictionary for storing CPCSOFTS ID numbers of files on
 					# NVG
 
 # If the FTP download option has been selected, then download the relevant
-# files from the NVG FTP site
+# files from the NVG FTP site to a temporary directory
 if download_files_from_ftp_host_flag:
 	# Connect and log on to the FTP host
 	try:
@@ -522,7 +541,8 @@ if download_files_from_ftp_host_flag:
 	temp_dir = tempfile.TemporaryDirectory()
 
 	# Download files from the FTP host
-	file_list = [ftp_nvg_csv_filepath, ftp_cpcpower_csv_filepath]
+	file_list = [ftp_nvg_csv_filepath, ftp_cpcpower_csv_filepath,
+		ftp_author_aliases_csv_filepath]
 	for file_to_download in file_list:
 		try:
 			print('Downloading {0} from {1}...'.format(file_to_download,
@@ -540,43 +560,56 @@ if download_files_from_ftp_host_flag:
 
 # Read the main CSV file
 try:
+	message = 'Reading {0}...'
 	if download_files_from_ftp_host_flag:
-		nvg_csv_filename = os.path.join(temp_dir.name,
+		nvg_csv_filename_read = os.path.join(temp_dir.name,
 			ftp_nvg_csv_filepath).replace('\\','/')
-	print('Reading {0}...'.format(nvg_csv_filename))
-	file_data = nvg.csv.read_nvg_csv_file(nvg_csv_filename)
+		print(message.format(os.path.basename(nvg_csv_filename)))
+	else:
+		nvg_csv_filename_read = nvg_csv_filename
+		print(message.format(nvg_csv_filename))
+	file_data = nvg.csv.read_nvg_csv_file(nvg_csv_filename_read)
 # If the main CSV file is missing, then print an error message and quit
 except FileNotFoundError:
-	print('Unable to read {0}.'.format(nvg_csv_filename))
+	print('Unable to read {0}.'.format(nvg_csv_filename_read))
 	if download_files_from_ftp_host_flag:
 		temp_dir.cleanup()
 	quit()
 
-# Read the CSV file containing the list of author aliases
-print('Reading list of author aliases in {0}...'.format(
-	author_aliases_csv_filename))
-author_aliases_dict = read_author_aliases_csv_file(
-	author_aliases_csv_filename)
-
 # Read the CSV file containing the list of CPCSOFTS ID numbers associated with
 # files on NVG
 try:
+	message = 'Reading list of CPCSOFTS ID numbers in {0}...'
 	if download_files_from_ftp_host_flag:
-		cpcpower_csv_filename = os.path.join(temp_dir.name,
+		cpcpower_csv_filename_read = os.path.join(temp_dir.name,
 			ftp_cpcpower_csv_filepath).replace('\\','/')
-	print('Reading list of CPCSOFTS ID numbers in {0}...'.format(
-		cpcpower_csv_filename))
-	cpcpower_data = nvg.csv.read_cpcpower_csv_file(cpcpower_csv_filename)
+		print(message.format(os.path.basename(cpcpower_csv_filename)))
+	else:
+		cpcpower_csv_filename_read = cpcpower_csv_filename
+		print(message.format(cpcpower_csv_filename))
+	cpcpower_data = nvg.csv.read_cpcpower_csv_file(cpcpower_csv_filename_read)
 # If the CSV file is missing, then print an error message; however, the
 # database can still be maintained without it
 except FileNotFoundError:
 	print(('Unable to read {0}. CPCSOFTS ID numbers will not be added or '
-		+ 'updated.').format(cpcpower_csv_filename))
+		+ 'updated.').format(cpcpower_csv_filename_read))
+
+# Read the CSV file containing the list of author aliases
+message = 'Reading list of author aliases in {0}...'
+if download_files_from_ftp_host_flag:
+	author_aliases_csv_filename_read = os.path.join(temp_dir.name,
+		ftp_author_aliases_csv_filepath).replace('\\','/')
+	print(message.format(os.path.basename(author_aliases_csv_filename_read)))
+else:
+	author_aliases_csv_filename_read = author_aliases_csv_filename
+	print(message.format(author_aliases_csv_filename))
+author_aliases_dict = read_author_aliases_csv_file(
+	author_aliases_csv_filename_read)
+
 # If a temporary directory was created earlier, delete the directory and its
 # contents
-finally:
-	if download_files_from_ftp_host_flag:
-		temp_dir.cleanup()
+if download_files_from_ftp_host_flag:
+	temp_dir.cleanup()
 
 # Some file types are incorrectly formatted, so they need to be corrected
 type_correction_dict = {'Games compilation': 'Compilation',
@@ -913,8 +946,12 @@ if author_aliases_dict:
 # codes
 # ----------------------------------------------------------------------------
 
-print('Converting data read from {0} to ID numbers...'.format(
-	nvg_csv_filename))
+message = 'Converting data read from {0} to ID numbers...'
+if download_files_from_ftp_host_flag:
+	print(message.format(os.path.basename(cpcpower_csv_filename)))
+else:
+	print(message.format(cpcpower_csv_filename))
+
 for filepath in sorted(file_data):
 	# Create a dictionary containing aliases of titles taken from the ALSO
 	# KNOWN AS field; the keys are filepaths which have aliases, and the
