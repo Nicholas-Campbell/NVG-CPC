@@ -61,7 +61,7 @@ python sql.py -u username -D cpc
 
 where `username` is the username to use when connecting to the MySQL host, and `cpc` is the name of the database to use. 
 
-The script creates and updates a MySQL database that contains data about the ZIP files that are stored on NVG, based on information from the following CSV files on NVG, which are located at the following URLs:
+The script creates and updates a MySQL database that contains data about the ZIP files that are stored on NVG, based on information from some CSV files on NVG, which are located at the following URLs:
 
 * `00_table.csv`: ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv
 * `author_aliases.csv`: ftp://ftp.nvg.ntnu.no/pub/cpc/author_aliases.csv
@@ -72,6 +72,16 @@ By default, the script will download these files from NVG each time it is run. H
 ```
 python sql.py -u username -D cpc --read-local-files
 ```
+
+When the database is built, the following tables are created:
+
+* `nvg`: The main table, containing filepaths and their associated ID numbers, and information about them (other than author and publisher information, which is stored in the `nvg_file_authors` table)
+* `nvg_author_ids`: ID numbers of authors, and links to alternative names by which certain authors are also known
+* `nvg_file_authors`: Associates author ID numbers with programs, and states their role(s) (e.g. AUTHOR, ARTIST, MUSICIAN, PUBLISHER)
+* `nvg_language_codes`: Languages used in files (e.g. English, French, German, Spanish), and their corresponding [IETF language tags](https://en.wikipedia.org/wiki/IETF_language_tag) (e.g. 'en', 'fr', 'de', 'es')
+* `nvg_publication_type_ids`: ID numbers of publication types of programs that are stored on NVG (e.g. commercial, freeware, public domain, type-in listing)
+* `nvg_title_aliases`: Alternative names by which certain programs are also known
+* `nvg_type_ids`: ID numbers of categories of programs that are stored on NVG (e.g. arcade game, board game, emulator, utility)
 
 ### Updating the database
 
