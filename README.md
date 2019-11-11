@@ -1,4 +1,14 @@
 # NVG-CPC
+
+* [About](About)
+* [Introduction](Introduction)
+* [Usage](Usage)
+   * [Building a MySQL database](Building-a-MySQL-database)
+   * [Updating the database](Updating-the-database)
+   * [Retrieving information from the database](Retrieving-information-from-the-database)
+
+## About
+
 A set of Python and SQL scripts for reading and using data about files on the NVG Amstrad CPC software FTP archive, located at ftp://ftp.nvg.ntnu.no/pub/cpc/ .
 
 More information about the Amstrad CPC range of computers is available at [Wikipedia](https://en.wikipedia.org/wiki/Amstrad_CPC).
@@ -93,6 +103,6 @@ python sql.py -?
 python sql.py --help
 ```
 
-### Retrieving information from the database in your own programs
+### Retrieving information from the database
 
 The database is set up with stored procedures and functions that can be used to search the database and retrieve information. Please see the [USAGE.md](USAGE.md) file for further information.
