@@ -1,14 +1,5 @@
 # NVG-CPC
 
-* [About](About)
-* [Introduction](Introduction)
-* [Usage](Usage)
-   * [Building a MySQL database](Building-a-MySQL-database)
-   * [Updating the database](Updating-the-database)
-   * [Retrieving information from the database](Retrieving-information-from-the-database)
-
-## About
-
 A set of Python and SQL scripts for reading and using data about files on the NVG Amstrad CPC software FTP archive, located at ftp://ftp.nvg.ntnu.no/pub/cpc/ .
 
 More information about the Amstrad CPC range of computers is available at [Wikipedia](https://en.wikipedia.org/wiki/Amstrad_CPC).
