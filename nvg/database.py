@@ -209,7 +209,6 @@ Nothing.
 			creation_message = db_build_info[step][0]
 			source_file = os.path.join(os.path.dirname(__file__),
 				db_build_info[step][1])
-			print(source_file)
 			error_message = db_build_info[step][2]
 			if len(db_build_info[step]) > 3:
 				error_message2 = db_build_info[step][3]
