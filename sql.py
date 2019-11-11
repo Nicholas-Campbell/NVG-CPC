@@ -3,11 +3,12 @@ software archive on NVG.
 
 The CSV file containing this information can be downloaded from the archive at
 the following URL:
+the following URL:
 <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 """
 
 # by Nicholas Campbell 2017-2019
-# Last update: 2019-08-26
+# Last update: 2019-11-11
 
 import csv
 import datetime
@@ -94,7 +95,7 @@ def _print_help():
 	if download_files_from_ftp_host_flag:
 		print('download the CSV files from the NVG FTP site.')
 	else:
-		print('read the CSV files locally.')
+		print('read locally stored copies of the CSV files.')
 
 def download_file_from_ftp_host(ftp_host, dir, filepath, file_transfer_mode):
 	"""Download a file from an FTP site.
@@ -449,7 +450,6 @@ db_name_set_in_options = False	# Has the name of the database been set in the
 build_db_flag = False			# Does the database need to be rebuilt?
 silent_output = False			# Silent output mode
 
-
 # Parse command line arguments
 #
 # The allowed options are intentionally similar to those used by MySQL
@@ -504,7 +504,11 @@ except getopt.GetoptError as argument_parse_error:
 
 # If no password is supplied in the command line options, ask for one
 if db_password == None:
-	db_password = getpass.getpass(prompt = 'Enter password: ')
+	try:
+		db_password = getpass.getpass(prompt = 'Enter password: ')
+	except KeyboardInterrupt:
+		print()
+		quit()
 
 
 # ------------------------------
@@ -557,6 +561,9 @@ if download_files_from_ftp_host_flag:
 
 	# Close the FTP connection
 	ftp.quit()
+
+# When reading the CSV files, if they were downloaded from the NVG FTP site,
+# then only display the filename and not its path
 
 # Read the main CSV file
 try:
@@ -706,7 +713,14 @@ else:
 		# Retrieve filepath author information
 		existing_filepath_id_author_info = \
 			get_existing_filepath_id_author_info()
-	except sql.OperationalError as db_error:
+
+		# Retrieve CPCSOFTS ID numbers of filepaths, but only if the CSV file
+		# containing CPCSOFTS ID numbers could not be read earlier
+		if not cpcpower_data:
+			cpcpower_data = build_dict_from_table(
+				'nvg', 'filepath', 'cpcsofts_id')
+
+	except (sql.OperationalError, sql.ProgrammingError) as db_error:
 		print(('Unable to retrieve data from database {0}. The following '
 			'error was encountered:').format(db_name), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)
@@ -727,7 +741,7 @@ if build_db_flag == True:
 else:
 	try:
 		author_ids_dict = db.get_authors()
-	except sql.OperationalError as db_error:
+	except (sql.OperationalError, sql.ProgrammingError) as db_error:
 		print(('Unable to retrieve list of author ID numbers from database '
 			+ '{0}. The following error was encountered:').format(db_name),
 			file=sys.stderr)
@@ -742,6 +756,10 @@ authors_to_add = _get_authors_to_add()
 # -------------------------
 # Populate tables with data
 # -------------------------
+
+# For inserting and updating data to be successful, the user must have been
+# granted the following privileges:
+# DELETE, INSERT, UPDATE
 
 # If the build flag is set, insert data into the tables containing the type ID
 # numbers, publication type ID numbers and language codes; if the build flag
@@ -778,7 +796,7 @@ if build_db_flag == True:
 			db.insert_language(language, code)
 
 		db.connection.commit()
-	except sql.OperationalError as db_error:
+	except (sql.OperationalError, sql.ProgrammingError) as db_error:
 		print(('Unable to insert rows into table {0}. The following error was '
 			+ 'encountered:').format(table_name), file=sys.stderr)
 		print('Error code: ' + str(db_error.args[0]), file=sys.stderr)

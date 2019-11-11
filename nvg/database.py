@@ -1,7 +1,8 @@
 # (C) Nicholas Campbell 2018-2019
-# Last update: 2019-08-26
+# Last update: 2019-11-11
 
 import os
+import os.path
 import pymysql as sql
 import re
 import sys
@@ -38,6 +39,7 @@ db_error_message_path = ('check that the PATH environment variable is set '
 	+ 'correctly')
 db_error_message_admin = ('check with your database administrator that you '
 	+ 'have the appropriate privileges to ')
+
 
 def _escape_table_name(table_name):
 	"""Replace backticks in a table name with double backticks so that it can be used
@@ -186,59 +188,46 @@ Nothing.
 		# Read external files containing SQL commands for setting up tables,
 		# triggers, stored routines and views
 
-		# Create tables
-		if silent_output == False:
-			print('Reading table creation commands from source file '
-				+ '{0}...'.format(db_tables_source_file))
-		db_command = (db_command_base + ' -D {0} < {1}').format(
-			self.db_name, db_tables_source_file)
-		if os.system(db_command) != 0:
-			print(('Unable to create tables for database {0} on host {1}. '
-				+ 'Please ' + db_error_message_path + ', or '
-				+ db_error_message_admin + 'create tables.').format(
-				self.db_name, self.db_hostname), file=sys.stderr)
-			self.disconnect()
-			quit()
+		# List containing messages and files for each step of the database
+		# building process. Each step is represented by a tuple containing the
+		# following elements:
+		# * Part of the message to display when reading the source file
+		# * The name of the source file to read
+		# * Parts of the message to display if an error is encountered
+		db_build_info = [
+			('table creation commands', db_tables_source_file, 'create tables'),
+			('trigger creation commands', db_triggers_source_file,
+				'create triggers',
+				'create triggers and associated stored procedures'),
+			('stored routine creation commands', db_stored_routines_source_file,
+				'create stored routines'),
+			('view creation commands', db_views_source_file, 'create views')
+		]
 
-		# Create triggers
-		if silent_output == False:
-			print('Reading trigger creation commands from source file '
-				+ '{0}...'.format(db_triggers_source_file))
-			db_command = (db_command_base + ' -D {0} < {1}').format(
-				self.db_name, db_triggers_source_file)
-			if os.system(db_command) != 0:
-				print(('Unable to create triggers for database {0} on host '
-					+ '{1}. Please ' + db_error_message_path + ', or '
-					+ db_error_message_admin + 'create triggers.').format(
-					self.db_name, self.db_hostname), file=sys.stderr)
-				self.disconnect()
-				quit()
+		# Read the source files
+		for step in range(0,len(db_build_info)):
+			creation_message = db_build_info[step][0]
+			source_file = os.path.join(os.path.dirname(__file__),
+				db_build_info[step][1])
+			print(source_file)
+			error_message = db_build_info[step][2]
+			if len(db_build_info[step]) > 3:
+				error_message2 = db_build_info[step][3]
+			else:
+				error_message2 = error_message
 
-		# Create stored functions and procedures
-		if silent_output == False:
-			print('Reading stored routine creation commands from source file '
-				+ '{0}...'.format(db_stored_routines_source_file))
+			if silent_output == False:
+				print('Reading {0} from source file {1}...'.format(
+					creation_message, source_file))
 			db_command = (db_command_base + ' -D {0} < {1}').format(
-				self.db_name, db_stored_routines_source_file)
+				self.db_name, source_file)
 			if os.system(db_command) != 0:
-				print(('Unable to create stored routines for database {0} '
-					+ 'on host {1}. Please ' + db_error_message_path + ', or '
-					+ db_error_message_admin + 'create triggers.').format(
-					self.db_name, self.db_hostname), file=sys.stderr)
-				self.disconnect()
-				quit()
-
-		# Create views
-		if silent_output == False:
-			print('Reading view creation commands from source file '
-				+ '{0}...'.format(db_views_source_file))
-			db_command = (db_command_base + ' -D {0} < {1}').format(
-				self.db_name, db_views_source_file)
-			if os.system(db_command) != 0:
-				print(('Unable to create views for database {0} on host {1}. '
-					+ 'Please ' + db_error_message_path + ', or '
-					+ db_error_message_admin + 'create triggers.').format(
-					self.db_name, self.db_hostname), file=sys.stderr)
+				print(('Unable to {0} for database {1} on host {2}. Please '
+					+ db_error_message_path + ', or '
+					+ db_error_message_admin + '{3}.').format(
+					error_message, self.db_name, self.db_hostname,
+					error_message2),
+					file=sys.stderr)
 				self.disconnect()
 				quit()
 
