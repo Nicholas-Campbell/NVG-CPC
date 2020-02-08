@@ -1,11 +1,19 @@
-/* Create tables for the NVG database */
+/* Create tables for the NVG database
+
+   Some columns are explicitly set to use the 'utf8' character set. This is to
+   avoid raising an error in some versions and configurations of MySQL and
+   MariaDB that only allow a maximum key size of 767 bytes. Using 'utf8'
+   instead of 'utf8mb4' prevents this error from occurring; however, this means
+   that any UTF-8 characters with code points above 0xFFFF cannot be stored in
+   these columns (although none of these characters are ever likely to be used
+   in this database) */
 
 /* Program type ID numbers and descriptions (e.g. 'Emulator', 'Arcade game',
    'Board game', 'Other program', 'Utility') */
 
 CREATE TABLE nvg_type_ids (
 	type_id TINYINT UNSIGNED AUTO_INCREMENT,
-	type_desc VARCHAR(255) NOT NULL,
+	type_desc VARCHAR(255) CHARACTER SET utf8 NOT NULL,
 	UNIQUE INDEX (type_desc),
 	PRIMARY KEY (type_id)
 );
@@ -15,7 +23,7 @@ CREATE TABLE nvg_type_ids (
 
 CREATE TABLE nvg_publication_type_ids (
 	type_id TINYINT UNSIGNED AUTO_INCREMENT,
-	type_desc VARCHAR(255) NOT NULL,
+	type_desc VARCHAR(255) CHARACTER SET utf8 NOT NULL,
 	UNIQUE INDEX (type_desc),
 	PRIMARY KEY (type_id)
 );
@@ -40,7 +48,7 @@ CREATE TABLE nvg (
 	filepath VARCHAR(260) CHARACTER SET ascii NOT NULL,
 	file_size INT UNSIGNED NOT NULL,
 	cpcsofts_id SMALLINT UNSIGNED,
-	title VARCHAR(255),
+	title VARCHAR(191) CHARACTER SET utf8,
 	company VARCHAR(255),
 	year DATE,
 	languages SET('ar','ca','da','de','el','en','en-US','es','fr','ga','it',
@@ -80,7 +88,7 @@ CREATE TABLE nvg (
 
 CREATE TABLE nvg_title_aliases (
 	filepath_id INT UNSIGNED,
-	title VARCHAR(255),
+	title VARCHAR(255) CHARACTER SET utf8,
 	PRIMARY KEY (filepath_id, title),
 	CONSTRAINT FOREIGN KEY fk_filepath_id (filepath_id)
 		REFERENCES nvg (filepath_id)
