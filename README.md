@@ -1,6 +1,6 @@
 # NVG-CPC
 
-A set of Python and SQL scripts for reading and using data about files on the NVG Amstrad CPC software FTP archive, located at ftp://ftp.nvg.ntnu.no/pub/cpc/ .
+A set of Python 3 and SQL scripts for reading and using data about files on the NVG Amstrad CPC software FTP archive, located at ftp://ftp.nvg.ntnu.no/pub/cpc/ .
 
 More information about the Amstrad CPC range of computers is available at [Wikipedia](https://en.wikipedia.org/wiki/Amstrad_CPC).
 
@@ -56,7 +56,7 @@ The `sql.py` Python script uses the [MySQL](https://www.mysql.com/) or [MariaDB]
 To set up and build the database on `localhost`, use the command below:
 
 ```
-python sql.py -u username -D cpc
+python3 sql.py -u username -D cpc
 ```
 
 where `username` is the username to use when connecting to the MySQL host, and `cpc` is the name of the database to use. 
@@ -70,7 +70,7 @@ The script creates and updates a MySQL database that contains data about the ZIP
 By default, the script will download these files from NVG each time it is run. However, it can also use copies of these files that are stored locally in the same directory as the script. If you wish to use locally stored copies, you can use the `--read-local-files` option:
 
 ```
-python sql.py -u username -D cpc --read-local-files
+python3 sql.py -u username -D cpc --read-local-files
 ```
 
 When the database is built, the following tables are created:
@@ -88,20 +88,20 @@ When the database is built, the following tables are created:
 Once the database has been built, it can be updated by using the same command, i.e.:
 
 ```
-python sql.py -u username -D cpc
+python3 sql.py -u username -D cpc
 ```
 
 The script will output messages detailing what data has been inserted and deleted. If you prefer these messages not to be displayed, you can use the `-s` or `--silent` options:
 
 ```
-python sql.py -u username -D cpc -s
+python3 sql.py -u username -D cpc -s
 ```
 
 More information about the command-line options that can be used is available by using either of the commands below:
 
 ```
-python sql.py -?
-python sql.py --help
+python3 sql.py -?
+python3 sql.py --help
 ```
 
 ### Retrieving information from the database
