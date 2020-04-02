@@ -48,14 +48,15 @@ BEGIN
 		OR (protected IS NOT NULL AND protected != '')
 		THEN
 			SIGNAL SQLSTATE '45000' SET message_text =
-			'\'company\' and \'protected\' columns are deprecated in file_id.diz versions 3.00 onwards';
+				'\'company\' and \'protected\' columns are deprecated in file_id.diz versions 3.00 onwards';
 		ELSEIF (cheat_mode IS NOT NULL AND cheat_mode != '')
-		AND (publication_type_id !=
+		AND (publication_type_id NOT IN
 			(SELECT type_id FROM nvg_publication_type_ids
-				WHERE type_desc = 'Crack'))
+				WHERE type_desc = 'Crack'
+				OR type_desc = 'Crack with modifications'))
 		THEN
 			SIGNAL SQLSTATE '45000' SET message_text =
-				'\'cheat_mode\' column can only be defined in file_id.diz versions 3.00 onwards if publication type has been set to \'Crack\'';
+				'\'cheat_mode\' column can only be defined in file_id.diz versions 3.00 onwards if publication type has been set to \'Crack\' or \'Crack with modifications\'';
 		-- Only certain values are permitted in the memory_required column
 		ELSEIF memory_required NOT IN(64,128,256) THEN
 			SIGNAL SQLSTATE '45000' SET message_text = 'Invalid value in memory_required column; the only valid values are 64, 128 and 256';

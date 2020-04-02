@@ -6,7 +6,7 @@
 # <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 #
 # Initial version by Nicholas Campbell 2018-01-06
-# Last update: 2018-04-21
+# Last update: 2020-04-02
 
 import csv	# Intended to import Python's built-in CSV module
 from os import path
@@ -43,7 +43,7 @@ A dictionary containing filepaths as the keys, and a dictionary of field names
 	file_data = {}
 
 	line = 0
-	with open(csv_filename, newline='', encoding='latin-1') as csv_file:
+	with open(csv_filename, newline='', encoding='utf-8') as csv_file:
 		csv_file_reader = csv.reader(csv_file, dialect='excel', delimiter=',')
 
 		# Skip the first line of the CSV file, which contains the field names
@@ -87,7 +87,7 @@ numbers as the values."""
 	cpcpower_data = {}
 
 	line = 0
-	with open(csv_filename, newline='', encoding='latin-1') as csv_file:
+	with open(csv_filename, newline='', encoding='utf-8') as csv_file:
 		csv_file_reader = csv.reader(csv_file, dialect='excel', delimiter=',')
 
 		# Skip the first line of the CSV file, which contains the field names
