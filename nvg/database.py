@@ -278,7 +278,6 @@ Nothing.
 			+ 'WHERE author_id = %s').format(
 			_escape_table_name(author_ids_table))
 		assert id in range(1,65536)
-		assert alias_of_id in range(1,65536)
 		rows_updated = cursor.execute(query, (name, alias_of_id, id))
 		if commit == True:
 			self.connection.commit()
