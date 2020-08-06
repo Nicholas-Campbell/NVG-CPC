@@ -1,6 +1,6 @@
 # NVG-CPC
 
-A set of Python 3 and SQL scripts for reading and using data about files on the NVG Amstrad CPC software FTP archive, located at ftp://ftp.nvg.ntnu.no/pub/cpc/ .
+A set of Python 3 and SQL scripts for reading and using data about files on the NVG Amstrad CPC software FTP archive, located at http://ftp.nvg.ntnu.no/pub/cpc/ .
 
 More information about the Amstrad CPC range of computers is available at [Wikipedia](https://en.wikipedia.org/wiki/Amstrad_CPC).
 
@@ -8,7 +8,7 @@ More information about the Amstrad CPC range of computers is available at [Wikip
 
 The NVG Amstrad CPC software archive (hereafter abbreviated to **NVG**) is one of the oldest archives of Amstrad CPC software on the Internet, and it has been around since the mid-1990s.
 
-The most useful source of data about the files on NVG is a CSV file located in the root directory named `00_table.csv`, which can be downloaded at ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv . A plain text file named `00_index_full.txt`, which is also located in the root directory of the archive and contains most of this information in a more human-readable format, is also available and can be downloaded at ftp://ftp.nvg.ntnu.no/pub/cpc/00_index_full.txt .
+The most useful source of data about the files on NVG is a CSV file located in the root directory named `00_table.csv`, which can be downloaded at http://ftp.nvg.ntnu.no/pub/cpc/00_table.csv . A plain text file named `00_index_full.txt`, which is also located in the root directory of the archive and contains most of this information in a more human-readable format, is also available and can be downloaded at http://ftp.nvg.ntnu.no/pub/cpc/00_index_full.txt .
 
 Both of these files contain data about ZIP files that are stored on NVG. Each ZIP file on NVG should include a file named `file_id.diz`, which is intended to contain data about the file, such as:
 
@@ -63,9 +63,9 @@ where `username` is the username to use when connecting to the MySQL host, and `
 
 The script creates and updates a MySQL database that contains data about the ZIP files that are stored on NVG, based on information from some CSV files on NVG, which are located at the following URLs:
 
-* `00_table.csv`: ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv
-* `author_aliases.csv`: ftp://ftp.nvg.ntnu.no/pub/cpc/author_aliases.csv
-* `cpcpower.csv`: ftp://ftp.nvg.ntnu.no/pub/cpc/cpcpower.csv
+* `00_table.csv`: http://ftp.nvg.ntnu.no/pub/cpc/00_table.csv
+* `author_aliases.csv`: http://ftp.nvg.ntnu.no/pub/cpc/author_aliases.csv
+* `cpcpower.csv`: http://ftp.nvg.ntnu.no/pub/cpc/cpcpower.csv
 
 By default, the script will download these files from NVG each time it is run. However, it can also use copies of these files that are stored locally in the same directory as the script. If you wish to use locally stored copies, you can use the `--read-local-files` option:
 
