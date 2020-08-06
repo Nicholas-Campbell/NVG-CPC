@@ -1,4 +1,4 @@
-# (C) Nicholas Campbell 2018-2019
+# (C) Nicholas Campbell 2018-2020
 # Last update: 2020-06-16
 
 import os
