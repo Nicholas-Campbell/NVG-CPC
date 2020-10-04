@@ -7,8 +7,8 @@ the following URL:
 <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 """
 
-# by Nicholas Campbell 2017-2019
-# Last update: 2019-11-11
+# by Nicholas Campbell 2017-2020
+# Last update: 2020-10-04
 
 import csv
 import datetime
