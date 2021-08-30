@@ -1,5 +1,5 @@
-# (C) Nicholas Campbell 2018-2020
-# Last update: 2020-06-16
+# (C) Nicholas Campbell 2018-2021
+# Last update: 2021-08-30
 
 import os
 import os.path
@@ -110,7 +110,7 @@ use_database (bool, optional): If False, do not select any database. This is
 		if (self.connection == None) or (self.connection.open == False):
 			self.connection = sql.connect(host = self.db_hostname,
 				user = self.db_username, password = self.db_password,
-				charset = 'utf8', autocommit = False)
+				charset = 'utf8mb4', autocommit = False)
 			if use_database:
 				self.connection.select_db(self.db_name)
 

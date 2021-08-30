@@ -3,12 +3,11 @@ software archive on NVG.
 
 The CSV file containing this information can be downloaded from the archive at
 the following URL:
-the following URL:
 <ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 """
 
-# by Nicholas Campbell 2017-2020
-# Last update: 2020-10-04
+# by Nicholas Campbell 2017-2021
+# Last update: 2021-08-30
 
 import csv
 import datetime
@@ -55,9 +54,9 @@ memory_required_valid_values = [64, 128, 256]
 # them in a comma-delimited string for use in defining the main table later on
 language_codes_dict = {
 	'Arabic': 'ar', 'Catalan': 'ca', 'Croatian': 'hr', 'Danish': 'da',
-	'Dutch': 'nl', 'English': 'en', 'English (American)': 'en-US',
+	'Dutch': 'nl', 'English': 'en', 'English (United States)': 'en-US',
 	'French': 'fr', 'German': 'de', 'Greek': 'el', 'Irish': 'ga',
-	'Italian': 'it', 'Portuguese (Brazilian)': 'pt-BR', 'Spanish': 'es',
+	'Italian': 'it', 'Portuguese (Brazil)': 'pt-BR', 'Spanish': 'es',
 	'Swedish' : 'sv'
 }
 
