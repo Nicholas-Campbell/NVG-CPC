@@ -53,10 +53,22 @@ memory_required_valid_values = [64, 128, 256]
 # Get the list of IETF language codes in alphabetical order and store
 # them in a comma-delimited string for use in defining the main table later on
 language_codes_dict = {
-	'Arabic': 'ar', 'Catalan': 'ca', 'Croatian': 'hr', 'Danish': 'da',
-	'Dutch': 'nl', 'English': 'en', 'English (United States)': 'en-US',
-	'French': 'fr', 'German': 'de', 'Greek': 'el', 'Irish': 'ga',
-	'Italian': 'it', 'Portuguese (Brazil)': 'pt-BR', 'Spanish': 'es',
+	'Arabic': 'ar',
+	'Basque': 'eu',
+	'Catalan': 'ca',
+	'Croatian': 'hr',
+	'Danish': 'da',
+	'Dutch': 'nl',
+	'English': 'en', 'English (United States)': 'en-US',
+	'French': 'fr',
+	'Galician': 'gl',
+	'German': 'de',
+	'Greek': 'el',
+	'Irish': 'ga',
+	'Italian': 'it',
+	'Polish': 'pl',
+	'Portuguese': 'pt', 'Portuguese (Brazil)': 'pt-BR',
+	'Spanish': 'es',
 	'Swedish' : 'sv'
 }
 
