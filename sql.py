@@ -3,15 +3,14 @@ software archive on NVG.
 
 The CSV file containing this information can be downloaded from the archive at
 the following URL:
-<ftp://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
+<https://ftp.nvg.ntnu.no/pub/cpc/00_table.csv>
 """
 
-# by Nicholas Campbell 2017-2021
-# Last update: 2021-08-30
+# by Nicholas Campbell 2017-2022
+# Last update: 2022-05-10
 
 import csv
 import datetime
-import ftplib
 import getopt
 import getpass
 import nvg.csv
@@ -19,9 +18,12 @@ import nvg.database
 import os
 import pymysql as sql
 import re
+import shutil
 import socket
 import sys
 import tempfile
+import textwrap
+import urllib.request
 
 
 # --------------------------------------------
@@ -45,7 +47,8 @@ download_files_from_ftp_host_flag = True
 # List of fields used in the main CSV file that represent authors
 author_field_list = ['PUBLISHER','RE-RELEASED BY','CRACKER','DEVELOPER',
 	'AUTHOR','DESIGNER','ARTIST','MUSICIAN']
-author_set_def = ','.join([repr(type) for type in author_field_list])
+author_set_def = ','.join([repr(author_type) \
+	for author_type in author_field_list])
 
 # Permitted values for the MEMORY REQUIRED field in the main CSV file
 memory_required_valid_values = [64, 128, 256]
@@ -73,81 +76,120 @@ language_codes_dict = {
 }
 
 
-def _print_help():
-	"""Display the help message associated with this program.
-"""
-	indent = ' '*22
-	print('Read CSV files from the Amstrad CPC section of the NVG FTP site at\n'
-		+ '<ftp://{0}/pub/cpc/> '.format(ftp_hostname)
-		+ 'and maintain the information in these files in\n'
-		+ 'a MySQL database.\n')
-	print('Usage: {0} [OPTIONS] [database]\n'.format(sys.argv[0]))
-	print('The following options can be used:')
-	print('  -?, --help          Display this help message and exit.')
-	print('  --build             Rebuild the entire database. USE WITH CAUTION!')
-	print('  -D, --database=name Database to use.')
-	print('  --ftp-download      Download CSV files from the NVG FTP site '
-		+ 'instead of\n'
-		+ indent + 'reading locally stored files.')
-	print('  -h, --host=name     Connect to host.')
-	print('  -p, --password=name Password to use when connecting to host.')
-	print('  --read-local-files  Read CSV files locally instead of downloading '
-		+ 'them from\n'
-		+ indent + 'the NVG FTP site.')
-	print('  -s, --silent        Be more silent. Don\'t print any information '
-		+ 'about what\n'
-		+ indent + 'changes were made to the database.')
-	print('  -u, --user=name     Username to use when connecting to host. If '
-		+ 'no username\n'
-		+ indent + 'is specified then the current login username will be\n'
-		+ indent + 'used.')
+def print_help():
+	"""Print a help message that is configured to fit the width of the console."""
+	console_width = shutil.get_terminal_size()[0]
+
+	print('\n'.join(textwrap.wrap(
+		f"""Read CSV files from the Amstrad CPC section of the NVG FTP site at
+<https://{ftp_hostname}/pub/cpc/> and maintain the information in these files in
+a MySQL database.""", width=console_width)))
+	print()
+	print('\n'.join(textwrap.wrap(
+		f'Usage: {sys.argv[0]} [OPTIONS] [database]\n', width=console_width)))
+	print()
+	print('\n'.join(textwrap.wrap(
+		'The following options can be used:', width=console_width)))
+
+	# The list of options
+	options = [
+		['-?, --help', 'Display this help message and exit.'],
+		['--build', 'Rebuild the entire database. USE WITH CAUTION!'],
+		['-D, --database=name', 'Database to use.'],
+		['--ftp-download', 'Download CSV files from the NVG FTP site \
+instead of reading locally stored files.'],
+		['-h, --host=name', 'Connect to host.'],
+		['-p, --password=name', 'Password to use when connecting to host.'],
+		['--read-local-files', 'Read CSV files locally instead of downloading \
+them from the NVG FTP site.'],
+		['-s, --silent', "Be more silent. Don\'t print any information about \
+what changes were made to the database."],
+		['-u, --user=name', 'Username to use when connecting to host. If no \
+username is specified then the current login username will be used.']
+	]
+	option_indent = 2		# Amount of indentation for option text
+	help_indent = 22		# Initial indentation for help text accompanying
+							# each option
+	min_help_indent = 4		# Minimum indentation for help text
+	help_text_width = 32	# Initial width of help text
+
+	# Calculate the indentation and widths of the help text
+	#
+	# If the default indentation and text width fits the width of the console,
+	# then expand the width of the help text
+	if help_indent + help_text_width <= console_width:
+		help_text_width = console_width - help_indent
+
+	# If it doesn't fit, then reduce the indentation
+	else:
+		help_indent = console_width - help_text_width
+		# If the indentation is now less than the minimum setting, readjust it,
+		# depending on the width of the console
+		if help_indent < min_help_indent:
+			if help_indent < console_width:
+				help_indent = 0
+			else:
+				help_indent = min_help_indent
+			help_text_width = console_width - help_indent
+
+	# Print the list of options
+	for option in options:
+		# Print the option text
+		option_line = ' '*option_indent + option[0]
+		print(option_line, end='')
+
+		# Print the help text
+		lines = textwrap.wrap(option[1], width=console_width-help_indent)
+		# If the option text cannot fit within the indentation of the help
+		# text, then print the option text on a separate line
+		if len(option_line)+1 > help_indent:
+			print('\n' + ' '*help_indent, end='')
+		# Otherwise, print the option text and the first line of the help text
+		# on one line
+		else:
+			print(' '*(help_indent-len(option_line)), end='')
+		print(('\n' + ' '*help_indent).join(lines))
 
 	# Print the default mode for reading the CSV files
-	print('\nThe default mode is to ', end='')
+	line = 'The default mode is to '
 	if download_files_from_ftp_host_flag:
-		print('download the CSV files from the NVG FTP site.')
+		line += 'download the CSV files from the NVG FTP site.'
 	else:
-		print('read locally stored copies of the CSV files.')
+		line += 'read locally stored copies of the CSV files.'
+	print()
+	print('\n'.join(textwrap.wrap(line, width=console_width)))
 
-def download_file_from_ftp_host(ftp_host, dir, filepath, file_transfer_mode):
-	"""Download a file from an FTP site.
+	return
+
+
+def download_file_via_http(url, destination_filepath):
+	"""Download a remote file using HTTP or HTTPS and write it to a local file.
 
 Parameters:
-ftp_host: An ftplib.FTP object representing a connection to an FTP site. A
-    connection must already be established and the user must be logged on.
-dir: The directory to download the specified file to.
-filepath: The path of the file to download from the FTP site.
-file_transfer_mode: The file transfer mode to use ('a' = ASCII, 'b' or 'i' =
-    image (binary)).
+url (str): The URL of the file to download.
+destination_filepath (str): The filepath (directory and filename) to write the
+    file to.
 
 Returns:
 Nothing.
-"""
-	# Convert the file transfer mode to lower case, and if it is not a valid
-	# mode, raise an exception
-	file_transfer_mode = file_transfer_mode.lower()
-	if file_transfer_mode not in ['a', 'b', 'i']:
-		raise ValueError
 
+Raises:
+HTTPError: There was an error downloading the file via HTTP.
+"""
 	# Check that the directory to download to exists; if it doesn't, then
 	# create the directories
-	(file_dir, filename) = os.path.split(filepath)
-	download_dir = os.path.join(dir, file_dir).replace('\\','/')
-	download_filepath = os.path.join(dir, filepath)
-	if not os.path.exists(download_dir):
-		os.makedirs(download_dir)
+	destination_dir = os.path.dirname(destination_filepath)
+	if destination_dir and not os.path.exists(destination_dir):
+		os.makedirs(destination_dir)
 
-	# Download the file to the specified directory
-	if file_transfer_mode == 'a':
-		file_handle = open(download_filepath, 'w', encoding='latin-1')
-		ftp_host.retrlines('RETR ' + filepath,
-			lambda file: file_handle.write(file + '\n'))
-	elif file_transfer_mode in ['b', 'i']:
-		file_handle = open(download_filepath, 'wb')
-		ftp_host.retrbinary('RETR ' + filepath,
-			lambda file: file_handle.write(file))
-	file_handle.close()
+	# Download the file
+	url_handle = urllib.request.urlopen(url)
+	download_bytes = url_handle.read()
 
+	# Write the file to the specified filepath
+	output_file_handle = open(destination_filepath, 'wb')
+	output_file_handle.write(download_bytes)
+	output_file_handle.close()
 
 def read_author_aliases_csv_file(csv_filename):
 	"""Read a CSV file containing a list of author names and aliases associated with
@@ -473,13 +515,13 @@ try:
 	# If more than one database name is supplied, then print the help message
 	# and quit
 	if len(args) > 1:
-		_print_help()
+		print_help()
 		quit()
 	else:
 		for (option, value) in optlist:
 			# Print the help message and quit
 			if option in ['-?', '--help']:
-				_print_help()
+				print_help()
 				quit()
 
 			# Database connection options
@@ -534,45 +576,22 @@ cpcpower_data = {}	# Dictionary for storing CPCSOFTS ID numbers of files on
 # If the FTP download option has been selected, then download the relevant
 # files from the NVG FTP site to a temporary directory
 if download_files_from_ftp_host_flag:
-	# Connect and log on to the FTP host
-	try:
-		print('Connecting to {0}...'.format(ftp_hostname))
-		ftp = ftplib.FTP(ftp_hostname)
-		ftp.login(user='anonymous', passwd='anonymous@nvg.ntnu.no')
-	# socket.gaierror exception is raised if it is not possible to connect
-	# to the FTP host
-	except (socket.gaierror, TimeoutError):
-		print('Unable to connect to FTP host {0}.'.format(ftp_hostname),
-			file=sys.stderr)
-		quit()
-	# ftplib.error_perm exception is raised if it is not possible to log on
-	# to the FTP host; the reply is also included
-	except ftplib.error_perm as ftp_error:
-		print(('Unable to log on to FTP host {0}. The following error was '
-			+ 'encountered: ').format(ftp_hostname), file=sys.stderr)
-		print(ftp_error)
-		quit()
-
 	# Create a temporary directory to download files to
 	temp_dir = tempfile.TemporaryDirectory()
 
-	# Download files from the FTP host
+	# Download files from the FTP host using HTTP
 	file_list = [ftp_nvg_csv_filepath, ftp_cpcpower_csv_filepath,
 		ftp_author_aliases_csv_filepath]
 	for file_to_download in file_list:
 		try:
-			print('Downloading {0} from {1}...'.format(file_to_download,
-				ftp_hostname))
-			download_file_from_ftp_host(ftp, temp_dir.name,
-				file_to_download, 'a')
-		except ftplib.error_perm as ftp_error:
-			print(('Unable to download {0} from {1}. The following error '
-				+ 'occurred:').format(file_to_download, ftp_hostname),
-				file=sys.stderr)
-			print(ftp_error, file=sys.stderr)
-
-	# Close the FTP connection
-	ftp.quit()
+			url = f'https://{ftp_hostname}/{file_to_download}'
+			destination_filepath = temp_dir.name + os.sep + file_to_download
+			print(f'Downloading {url} to {temp_dir.name}...')
+			download_file_via_http(url, destination_filepath)
+		except (urllib.error.HTTPError, urllib.error.URLError) as http_error:
+			print((f'Unable to download {url}. The following error was '
+				+ 'encountered: ').format(url), file=sys.stderr)
+			print(http_error)
 
 # When reading the CSV files, if they were downloaded from the NVG FTP site,
 # then only display the filename and not its path
